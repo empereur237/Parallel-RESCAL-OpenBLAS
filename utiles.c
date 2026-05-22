@@ -6,6 +6,148 @@
 
 #include "utiles.h"
 
+int g_num_threads = 1; /* valeur par defaut : sequentiel */
+
+typedef struct {
+    /* Matrices d'entree (lecture seule, partagees) */
+    double** A_data;    /* donnees de A */
+    double** B_data;    /* donnees de B */
+    double** C_data;    /* donnees de C (ecriture, zone exclusive) */
+
+    /* Dimensions */
+    int M;              /* lignes de A = lignes de C */
+    int K;              /* colonnes de A = lignes de B */
+    int N;              /* colonnes de B = colonnes de C */
+
+    /* Plage de lignes assignee a CE thread */
+    int row_start;      /* premiere ligne (incluse) */
+    int row_end;        /* derniere ligne (exclue)  */
+
+} DotThreadArgs;
+
+typedef struct {
+    CSRMatrix* A;
+    Matrix* B;
+    Matrix* C;
+    int row_start;
+    int row_end;
+} DotCsrThreadArgs;
+
+typedef struct {
+    Matrix* A;
+    CSRMatrix* B;
+    Matrix* C;
+    int row_start;
+    int row_end;
+} DotCsr1ThreadArgs;
+
+static void* thread_block_dot(void* arg) {
+    DotThreadArgs* args = (DotThreadArgs*)arg;
+
+    double** A = args->A_data;
+    double** B = args->B_data;
+    double** C = args->C_data;
+    int K = args->K;
+    int N = args->N;
+    int row_start = args->row_start;
+    int row_end   = args->row_end;
+
+    /* Cache blocking : boucles sur les blocs */
+    /* Chaque bloc de taille BLOCK_SIZE tient dans le cache L1 */
+    for (int i = row_start; i < row_end; i += BLOCK_SIZE) {
+        for (int k = 0; k < K; k += BLOCK_SIZE) {
+            for (int j = 0; j < N; j += BLOCK_SIZE) {
+
+                /* Bornes des blocs (gestion des bords) */
+                int i_end = i + BLOCK_SIZE < row_end ? i + BLOCK_SIZE : row_end;
+                int k_end = k + BLOCK_SIZE < K      ? k + BLOCK_SIZE : K;
+                int j_end = j + BLOCK_SIZE < N      ? j + BLOCK_SIZE : N;
+
+                /* Micro-kernel : calcul sur le bloc */
+                /* Ordre (ii, kk, jj) pour localite spatiale optimale */
+                /* A[ii][kk] charge une fois, reutilise pour tout j   */
+                /* Compilateur vectorise la boucle jj avec -march=native */
+                for (int ii = i; ii < i_end; ii++) {
+                    for (int kk = k; kk < k_end; kk++) {
+                        double a_val = A[ii][kk]; /* charge 1 fois */
+                        for (int jj = j; jj < j_end; jj++) {
+                            C[ii][jj] += a_val * B[kk][jj];
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static void distribute_rows(int rows, int p, int t, int* row_start, int* row_end) {
+    int base_rows = rows / p;
+    int remainder = rows % p;
+    int start = t * base_rows + (t < remainder ? t : remainder);
+    int rows_for_t = base_rows + (t < remainder ? 1 : 0);
+
+    *row_start = start;
+    *row_end = start + rows_for_t;
+}
+
+static void* thread_dot_csr(void* arg) {
+    DotCsrThreadArgs* args = (DotCsrThreadArgs*)arg;
+    CSRMatrix* A = args->A;
+    Matrix* B = args->B;
+    Matrix* C = args->C;
+    const int p = B->cols;
+
+    for (int i = args->row_start; i < args->row_end; i++) {
+        double* C_row = C->data[i];
+        const int row_start = A->row_ptr[i];
+        const int row_end = A->row_ptr[i + 1];
+
+        for (int k = row_start; k < row_end; k++) {
+            const int col = A->col_index[k];
+            const double val = A->values[k];
+            double* B_row = B->data[col];
+
+            for (int j = 0; j < p; j++) {
+                C_row[j] += val * B_row[j];
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static void* thread_dot_csr1(void* arg) {
+    DotCsr1ThreadArgs* args = (DotCsr1ThreadArgs*)arg;
+    Matrix* A = args->A;
+    CSRMatrix* B = args->B;
+    Matrix* C = args->C;
+
+    /* Strategie choisie : decoupe row-wise sur les lignes de A.
+       B reste au format CSR ; chaque thread accumule exclusivement
+       dans ses lignes de C, ce qui evite toute synchronisation. */
+    for (int i = args->row_start; i < args->row_end; i++) {
+        double* A_row = A->data[i];
+        double* C_row = C->data[i];
+
+        for (int k = 0; k < B->rows; k++) {
+            const int row_start = B->row_ptr[k];
+            const int row_end = B->row_ptr[k + 1];
+            const double a_val = A_row[k];
+
+            for (int idx = row_start; idx < row_end; idx++) {
+                const int j = B->col_index[idx];
+                const double val = B->values[idx];
+                C_row[j] += a_val * val;
+            }
+        }
+    }
+
+    return NULL;
+}
+
 void check_slices(Tensor3D* X) {
     if (X == NULL) {
         fprintf(stderr, "Erreur : tenseur NULL\n");
@@ -887,52 +1029,76 @@ Tensor3D* copy_Tensor3D(Tensor3D* src) {
 }
 
 Matrix* dot(Matrix* A, Matrix* B) {
-    if (!A || !B || A->cols != B->rows) {
+    if (!A || !B) {
+        fprintf(stderr, "Erreur : matrices NULL dans dot\n");
+        return NULL;
+    }
+    if (A->cols != B->rows) {
         fprintf(stderr, "Erreur : dimensions incompatibles dans dot\n");
         return NULL;
     }
 
-    int n = A->rows;
-    int m = A->cols;
-    int p = B->cols;
+    int M = A->rows;
+    int K = A->cols;
+    int N = B->cols;
 
-    Matrix* C = init_Matrix(n, p);
+    Matrix* C = init_Matrix(M, N);
     if (!C || !C->data) {
         fprintf(stderr, "Erreur : allocation échouée dans dot\n");
         free_Matrix(C);
         return NULL;
     }
 
-    int max_threads = omp_get_max_threads();
-    if (max_threads <= 0) {
-        max_threads = 1;
+    int p = g_num_threads;
+    if (p > M) {
+        p = M;
     }
-    openblas_set_num_threads(max_threads);
-
-#if RESCAL_BLAS_DEBUG
-    static int blas_debug_printed = 0;
-    if (!blas_debug_printed) {
-        printf("[BLAS] OpenBLAS threads: %d\n", max_threads);
-        blas_debug_printed = 1;
+    if (p < 1) {
+        p = 1;
     }
-#endif
 
-    cblas_dgemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasNoTrans,
-        n,
-        p,
-        m,
-        1.0,
-        A->data[0],
-        A->cols,
-        B->data[0],
-        B->cols,
-        0.0,
-        C->data[0],
-        C->cols
-    );
+    if (p == 1) {
+        DotThreadArgs args = {
+            A->data, B->data, C->data, M, K, N, 0, M
+        };
+        thread_block_dot(&args);
+        return C;
+    }
+
+    pthread_t* threads = malloc((size_t)p * sizeof(pthread_t));
+    DotThreadArgs* args = malloc((size_t)p * sizeof(DotThreadArgs));
+    if (!threads || !args) {
+        free(threads);
+        free(args);
+        free_Matrix(C);
+        return NULL;
+    }
+
+    int base_rows = M / p;
+    int remainder = M % p;
+    int current_row = 0;
+
+    for (int t = 0; t < p; t++) {
+        int rows_for_t = base_rows + (t < remainder ? 1 : 0);
+        args[t].A_data    = A->data;
+        args[t].B_data    = B->data;
+        args[t].C_data    = C->data;
+        args[t].M         = M;
+        args[t].K         = K;
+        args[t].N         = N;
+        args[t].row_start = current_row;
+        args[t].row_end   = current_row + rows_for_t;
+        current_row      += rows_for_t;
+
+        pthread_create(&threads[t], NULL, thread_block_dot, &args[t]);
+    }
+
+    for (int t = 0; t < p; t++) {
+        pthread_join(threads[t], NULL);
+    }
+
+    free(threads);
+    free(args);
 
     return C;
 }
@@ -1220,31 +1386,56 @@ Matrix* dot_csr(CSRMatrix* A, Matrix* B) {
         return NULL;
     }
 
-    const int n = A->rows;
-    const int p = B->cols;
-    Matrix* C = init_Matrix(n, p);
+    const int M = A->rows;
+    const int N = B->cols;
+    Matrix* C = init_Matrix(M, N);
     if (!C || !C->data) {
         fprintf(stderr, "Erreur : allocation échouée\n");
         free_Matrix(C);
         return NULL;
     }
 
-    for (int i = 0; i < n; i++) {
-        double* C_row = C->data[i];
-        const int row_start = A->row_ptr[i];
-        const int row_end = A->row_ptr[i + 1];
-
-        for (int k = row_start; k < row_end; k++) {
-            const int col = A->col_index[k];
-            const double val = A->values[k];
-            double* B_row = B->data[col];
-
-            for (int j = 0; j < p; j++) {
-                C_row[j] += val * B_row[j];
-            }
-        }
+    int p = g_num_threads;
+    if (p > M) {
+        p = M;
+    }
+    if (p < 1) {
+        p = 1;
     }
 
+    if (p == 1) {
+        DotCsrThreadArgs args = { A, B, C, 0, M };
+        thread_dot_csr(&args);
+        return C;
+    }
+
+    pthread_t* threads = malloc((size_t)p * sizeof(pthread_t));
+    DotCsrThreadArgs* args = malloc((size_t)p * sizeof(DotCsrThreadArgs));
+    if (!threads || !args) {
+        free(threads);
+        free(args);
+        free_Matrix(C);
+        return NULL;
+    }
+
+    for (int t = 0; t < p; t++) {
+        int row_start = 0;
+        int row_end = 0;
+        distribute_rows(M, p, t, &row_start, &row_end);
+        args[t].A = A;
+        args[t].B = B;
+        args[t].C = C;
+        args[t].row_start = row_start;
+        args[t].row_end = row_end;
+        pthread_create(&threads[t], NULL, thread_dot_csr, &args[t]);
+    }
+
+    for (int t = 0; t < p; t++) {
+        pthread_join(threads[t], NULL);
+    }
+
+    free(threads);
+    free(args);
     return C;
 }
 
@@ -1301,26 +1492,52 @@ Matrix* dot_csr1(Matrix* A, CSRMatrix* B) {
         return NULL;
     }
 
-    const int m = A->rows;
-    const int p = B->cols;
-    Matrix* C = init_Matrix(m, p);
+    const int M = A->rows;
+    const int N = B->cols;
+    Matrix* C = init_Matrix(M, N);
     if (!C) return NULL;
 
-    for (int i = 0; i < m; i++) {
-        double* A_row = A->data[i];
-        double* C_row = C->data[i];
-
-        for (int k = 0; k < B->rows; k++) {
-            const int row_start = B->row_ptr[k];
-            const int row_end = B->row_ptr[k + 1];
-
-            for (int idx = row_start; idx < row_end; idx++) {
-                const int j = B->col_index[idx];
-                const double val = B->values[idx];
-                C_row[j] += A_row[k] * val;
-            }
-        }
+    int p = g_num_threads;
+    if (p > M) {
+        p = M;
     }
+    if (p < 1) {
+        p = 1;
+    }
+
+    if (p == 1) {
+        DotCsr1ThreadArgs args = { A, B, C, 0, M };
+        thread_dot_csr1(&args);
+        return C;
+    }
+
+    pthread_t* threads = malloc((size_t)p * sizeof(pthread_t));
+    DotCsr1ThreadArgs* args = malloc((size_t)p * sizeof(DotCsr1ThreadArgs));
+    if (!threads || !args) {
+        free(threads);
+        free(args);
+        free_Matrix(C);
+        return NULL;
+    }
+
+    for (int t = 0; t < p; t++) {
+        int row_start = 0;
+        int row_end = 0;
+        distribute_rows(M, p, t, &row_start, &row_end);
+        args[t].A = A;
+        args[t].B = B;
+        args[t].C = C;
+        args[t].row_start = row_start;
+        args[t].row_end = row_end;
+        pthread_create(&threads[t], NULL, thread_dot_csr1, &args[t]);
+    }
+
+    for (int t = 0; t < p; t++) {
+        pthread_join(threads[t], NULL);
+    }
+
+    free(threads);
+    free(args);
     return C;
 }
 

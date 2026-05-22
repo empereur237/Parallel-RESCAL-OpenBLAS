@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -O3 -march=native -fopenmp
-LDFLAGS = -lopenblas -lm -lpthread
+CFLAGS = -Wall -Wextra -std=c11 -O3 -march=native
+LDFLAGS = -lm -lpthread
 
 SOURCES = rescal.c svd.c utiles.c predition.c main_als.c
 HEADERS = utiles.h svd.h rescal.h predition.h

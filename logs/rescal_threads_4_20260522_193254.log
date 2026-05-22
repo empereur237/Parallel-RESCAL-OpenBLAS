@@ -1,0 +1,16 @@
+[Threads] Utilisation de 4 thread(s) sur 12 disponibles
+SKIP: [kinships] rank=50 threads=4 -- deja calcule
+SKIP: [kinships] rank=90 threads=4 -- deja calcule
+SKIP: [kinships] rank=100 threads=4 -- deja calcule
+SKIP: [umls] rank=50 threads=4 -- deja calcule
+SKIP: [umls] rank=90 threads=4 -- deja calcule
+SKIP: [umls] rank=100 threads=4 -- deja calcule
+SKIP: [nations] rank=50 threads=4 -- deja calcule
+SKIP: [nations] rank=90 threads=4 -- deja calcule
+SKIP: [nations] rank=100 threads=4 -- deja calcule
+====================================================
+RÉSUMÉ FINAL
+====================================================
+Combinaisons exécutées : 0 / 9
+Résultats sauvegardés  : rescal_results.csv
+====================================================

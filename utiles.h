@@ -15,9 +15,6 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
-#include <omp.h>
-
-#include <cblas.h>
 
 #ifndef RESCAL_BLAS_DEBUG
 #define RESCAL_BLAS_DEBUG 0
@@ -37,6 +34,8 @@
 #define _DEF_ATTR_COUNT 0
 #define _DEF_TYPE 1
 #define MAX_FILENAME 1024
+/* Taille de bloc pour le cache blocking -- calibree pour L1 cache */
+/* Valeur recommandee : 32 a 64 selon la taille du cache L1      */
 #define BLOCK_SIZE 32
 //#define NUM_THREADS 4
 //#define FOLDS 10
@@ -104,6 +103,10 @@ typedef struct {
     int count;
     int capacity;
 } FileList;
+
+/* Nombre de threads pour le produit matriciel parallele */
+/* Initialisee dans main(), lue par dot() et ses workers  */
+extern int g_num_threads;
 
 void check_slices(Tensor3D* X);
 

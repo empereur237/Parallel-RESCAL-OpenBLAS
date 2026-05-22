@@ -95,8 +95,9 @@ static void processed_set_add(ProcessedSet* set, const char* key) {
 }
 
 static void make_run_key(char* buffer, size_t size, const char* dataset,
-                         int rank, double lambda_A, double lambda_R) {
-    snprintf(buffer, size, "%s;%d;%.6f;%.6f", dataset, rank, lambda_A, lambda_R);
+                         int rank, double lambda_A, double lambda_R, int threads) {
+    snprintf(buffer, size, "%s;%d;%.6f;%.6f;%d",
+             dataset, rank, lambda_A, lambda_R, threads);
 }
 
 static void load_processed_runs(const char* filename, ProcessedSet* set) {
@@ -116,6 +117,7 @@ static void load_processed_runs(const char* filename, ProcessedSet* set) {
         int rank = 0;
         double lambda_A = 0.0;
         double lambda_R = 0.0;
+        int threads = 1;
 
         char* fields[12] = {0};
         int field_count = 0;
@@ -130,9 +132,15 @@ static void load_processed_runs(const char* filename, ProcessedSet* set) {
             rank = atoi(fields[1]);
             lambda_A = strtod(fields[4], NULL);
             lambda_R = strtod(fields[5], NULL);
+            if (field_count >= 12) {
+                threads = atoi(fields[11]);
+                if (threads < 1) {
+                    threads = 1;
+                }
+            }
 
             char key[512];
-            make_run_key(key, sizeof(key), dataset, rank, lambda_A, lambda_R);
+            make_run_key(key, sizeof(key), dataset, rank, lambda_A, lambda_R, threads);
             processed_set_add(set, key);
         }
     }
@@ -157,8 +165,76 @@ static FILE* open_results_file(const char* filename) {
     return file;
 }
 
-int main(void) {
+static bool is_force_value(const char* value) {
+    return value &&
+           (strcmp(value, "1") == 0 ||
+            strcmp(value, "true") == 0 ||
+            strcmp(value, "TRUE") == 0 ||
+            strcmp(value, "yes") == 0 ||
+            strcmp(value, "YES") == 0);
+}
+
+int main(int argc, char* argv[]) {
     srand((unsigned int)time(NULL));
+
+    /* Nombre de threads : argument optionnel */
+    /* Usage : ./rescal [num_threads] [--force-rerun] */
+    /* Defaut : 1 thread (sequentiel)          */
+    int max_threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (max_threads < 1) {
+        max_threads = 1;
+    }
+
+    bool force_rerun = is_force_value(getenv("RESCAL_FORCE_RERUN"));
+    bool threads_set = false;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--force-rerun") == 0 ||
+            strcmp(argv[i], "--no-skip") == 0) {
+            force_rerun = true;
+            continue;
+        }
+
+        if (argv[i][0] == '-') {
+            fprintf(stderr, "ERREUR : option inconnue : %s\n", argv[i]);
+            fprintf(stderr, "Usage : %s [num_threads] [--force-rerun]\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+
+        if (threads_set) {
+            fprintf(stderr, "ERREUR : nombre de threads donne plusieurs fois\n");
+            fprintf(stderr, "Usage : %s [num_threads] [--force-rerun]\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+
+        char* endptr = NULL;
+        long parsed_threads = strtol(argv[i], &endptr, 10);
+        if (!endptr || *endptr != '\0' || parsed_threads < 1) {
+            fprintf(stderr, "ERREUR : num_threads doit etre un entier >= 1\n");
+            return EXIT_FAILURE;
+        }
+
+        g_num_threads = (int)parsed_threads;
+        threads_set = true;
+    }
+
+    if (!threads_set) {
+        g_num_threads = 1;
+    }
+
+    if (g_num_threads > max_threads) {
+        fprintf(stderr,
+            "AVERTISSEMENT : %d threads demandes, "
+            "machine limitee a %d. Valeur reduite.\n",
+            g_num_threads, max_threads);
+        g_num_threads = max_threads;
+    }
+
+    printf("[Threads] Utilisation de %d thread(s) sur %d disponibles\n",
+           g_num_threads, max_threads);
+    if (force_rerun) {
+        printf("[Reprise] Mode force active : les combinaisons deja presentes seront recalculees\n");
+    }
 
     DatasetConfig datasets[] = {
         { "kinships", "./kinships" },
@@ -186,11 +262,6 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    int threads = omp_get_max_threads();
-    if (threads <= 0) {
-        threads = 1;
-    }
-
     int total_combinations = num_datasets * num_configs;
     int executed = 0;
     int attr = 0;
@@ -201,17 +272,18 @@ int main(void) {
             ALSConfig config = configs[c];
             char run_key[512];
             make_run_key(run_key, sizeof(run_key), dataset.name, config.rank,
-                         config.lambda_A, config.lambda_R);
+                         config.lambda_A, config.lambda_R, g_num_threads);
 
-            if (processed_set_contains(&processed, run_key)) {
-                printf("SKIP: [%s] rank=%d — déjà calculé\n", dataset.name, config.rank);
+            if (!force_rerun && processed_set_contains(&processed, run_key)) {
+                printf("SKIP: [%s] rank=%d threads=%d -- deja calcule\n",
+                       dataset.name, config.rank, g_num_threads);
                 continue;
             }
 
             printf("=== DATASET: %s | rank:%d | lambda_A:%.1f | lambda_R:%.1f ===\n",
                    dataset.name, config.rank, config.lambda_A, config.lambda_R);
             printf("[Config] maxIter:%d | conv:%.1e | threads:%d\n",
-                   config.maxIter, config.conv, threads);
+                   config.maxIter, config.conv, g_num_threads);
 
             struct timeval import_start, import_end;
             gettimeofday(&import_start, NULL);
@@ -286,7 +358,7 @@ int main(void) {
                     "%s;%d;%d;%.6f;%.6f;%.6f;%d;%.6f;%.6f;%.6f;%.6f;%d\n",
                     dataset.name, config.rank, config.maxIter, config.conv,
                     config.lambda_A, config.lambda_R, nnz, import_time,
-                    test_mean, test_std, total_time, threads);
+                    test_mean, test_std, total_time, g_num_threads);
             fflush(results_file);
             processed_set_add(&processed, run_key);
             executed++;
