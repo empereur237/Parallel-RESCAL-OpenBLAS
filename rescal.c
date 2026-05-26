@@ -1,11 +1,6 @@
-
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : mises à jour ALS et calcul du critère RESCAL.
- */
-
 #include "rescal.h"
+
+#define FIT_SAMPLE_BUDGET 10000
 
 double _compute_fit(CSR3DTensor* X, Tensor3D* X1, Matrix* A, Tensor3D* R,
                    double lambda_A, double lambda_R) {
@@ -16,10 +11,14 @@ double _compute_fit(CSR3DTensor* X, Tensor3D* X1, Matrix* A, Tensor3D* R,
 
     /* Norme de Frobenius de X via les valeurs CSR (evite de parcourir les zeros) */
     double sumNorm = 0.0;
+    int observed_count = 0;
     for (int k = 0; k < X->num_slices; ++k)
         for (int i = 0; i < X->slices[k].nnz; ++i) {
             double val = X->slices[k].values[i];
             sumNorm += val * val;
+            if (fabs(val) > EPSILON) {
+                observed_count++;
+            }
         }
 
     if (sumNorm < 1e-10) {
@@ -28,22 +27,59 @@ double _compute_fit(CSR3DTensor* X, Tensor3D* X1, Matrix* A, Tensor3D* R,
     }
 
     double compute = 0.0;
-    Matrix* At = T_matrix(A);
 
-    for (int i = 0; i < X->num_slices; ++i) {
-        Matrix* RAt  = dot(&R->slices[i], At);
-        Matrix* ARAt = dot(A, RAt);
-        free_Matrix(RAt);
+    /*
+     * Critere creux : on evalue l'erreur sur les entrees observees du tenseur
+     * CSR. Cette forme evite explicitement la reconstruction dense A R_k A^T,
+     * qui est impossible pour FB15k-237.
+     */
+    int sample_stride = 1;
+    if (observed_count > FIT_SAMPLE_BUDGET) {
+        sample_stride = observed_count / FIT_SAMPLE_BUDGET;
+        if (sample_stride < 1) {
+            sample_stride = 1;
+        }
+    }
 
-        Matrix* diff = soustraction(&X1->slices[i], ARAt);
-        free_Matrix(ARAt);
+    int seen = 0;
+    int evaluated = 0;
+    for (int k = 0; k < X->num_slices; ++k) {
+        CSRMatrix* slice = &X->slices[k];
+        Matrix* Rk = &R->slices[k];
 
-        double diff_norm = 0.0;
-        for (int j = 0; j < diff->rows; j++)
-            for (int kk = 0; kk < diff->cols; kk++)
-                diff_norm += diff->data[j][kk] * diff->data[j][kk];
-        compute += diff_norm;
-        free_Matrix(diff);
+        for (int row = 0; row < slice->rows; row++) {
+            for (int p = slice->row_ptr[row]; p < slice->row_ptr[row + 1]; p++) {
+                double observed = slice->values[p];
+                if (fabs(observed) <= EPSILON) {
+                    continue;
+                }
+                if ((seen++ % sample_stride) != 0) {
+                    continue;
+                }
+
+                int col = slice->col_index[p];
+                double predicted = 0.0;
+
+                for (int i = 0; i < A->cols; i++) {
+                    double left = A->data[row][i];
+                    if (fabs(left) <= EPSILON) {
+                        continue;
+                    }
+
+                    for (int j = 0; j < A->cols; j++) {
+                        predicted += left * Rk->data[i][j] * A->data[col][j];
+                    }
+                }
+
+                double diff = observed - predicted;
+                compute += diff * diff;
+                evaluated++;
+            }
+        }
+    }
+
+    if (evaluated > 0 && evaluated < observed_count) {
+        compute *= (double)observed_count / (double)evaluated;
     }
 
     double norm_A = 0.0;
@@ -62,7 +98,6 @@ double _compute_fit(CSR3DTensor* X, Tensor3D* X1, Matrix* A, Tensor3D* R,
     compute += lambda_A * norm_A + lambda_R * norm_R;
     double fit = 1.0 - (compute / sumNorm);
 
-    free_Matrix(At);
     return fit;
 }
 

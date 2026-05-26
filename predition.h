@@ -1,9 +1,3 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : chargement des tenseurs, prédiction et métriques.
- */
-
 #ifndef PREDITION_H
 #define PREDITION_H
 

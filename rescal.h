@@ -1,9 +1,3 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : mises à jour ALS et interface principale RESCAL.
- */
-
 #ifndef RESCAL_H
 #define RESCAL_H
 

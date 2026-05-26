@@ -1,10 +1,41 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : allocations, conversions CSR et opérations matricielles.
- */
-
 #include "utiles.h"
+
+static CSRMatrix* copy_CSRMatrix_owned(const CSRMatrix* src) {
+    if (!src) return NULL;
+
+    CSRMatrix* dest = init_CSRMatrix(src->rows, src->cols, src->nnz);
+    if (!dest) return NULL;
+
+    if (src->nnz > 0) {
+        memcpy(dest->values, src->values, (size_t)src->nnz * sizeof(double));
+        memcpy(dest->col_index, src->col_index, (size_t)src->nnz * sizeof(int));
+    }
+    memcpy(dest->row_ptr, src->row_ptr, (size_t)(src->rows + 1) * sizeof(int));
+    return dest;
+}
+
+static double csr_get_value(const CSRMatrix* csr, int row, int col) {
+    if (!csr || row < 0 || row >= csr->rows || col < 0 || col >= csr->cols) {
+        return 0.0;
+    }
+
+    for (int p = csr->row_ptr[row]; p < csr->row_ptr[row + 1]; ++p) {
+        if (csr->col_index[p] == col) {
+            return csr->values[p];
+        }
+    }
+    return 0.0;
+}
+
+static double __attribute__((unused)) matrix_get_value(const Matrix* matrix, int row, int col) {
+    if (!matrix || row < 0 || row >= matrix->rows || col < 0 || col >= matrix->cols) {
+        return 0.0;
+    }
+    if (matrix->data) {
+        return matrix->data[row][col];
+    }
+    return csr_get_value(matrix->csr_view, row, col);
+}
 
 void check_slices(Tensor3D* X) {
     if (X == NULL) {
@@ -85,8 +116,17 @@ int count_non_zero(const Matrix* mat) {
 }
 
 CSRMatrix* dense_to_csr(Matrix* dense) {
-    if (!dense || !dense->data || dense->rows <= 0 || dense->cols <= 0) {
+    if (!dense || dense->rows <= 0 || dense->cols <= 0) {
         fprintf(stderr, "Erreur : Matrice dense invalide\n");
+        return NULL;
+    }
+
+    if (!dense->data && dense->csr_view) {
+        return copy_CSRMatrix_owned(dense->csr_view);
+    }
+
+    if (!dense->data) {
+        fprintf(stderr, "Erreur : Matrice dense sans donnees\n");
         return NULL;
     }
 
@@ -176,6 +216,26 @@ CSR3DTensor* tensor_to_csr(Tensor3D* tensor) {
         fprintf(stderr, "Erreur : tenseur d'entree NULL\n");
         return NULL;
     }
+
+    if (tensor->csr) {
+        CSR3DTensor* csr_copy = init_CSR3DTensor(tensor->csr->num_slices,
+                                                 tensor->csr->rows,
+                                                 tensor->csr->cols, 0);
+        if (!csr_copy) return NULL;
+
+        for (int i = 0; i < tensor->csr->num_slices; i++) {
+            CSRMatrix* slice_copy = copy_CSRMatrix_owned(&tensor->csr->slices[i]);
+            if (!slice_copy) {
+                free_CSR3DTensor(csr_copy);
+                return NULL;
+            }
+            free_CSRMatrix(&csr_copy->slices[i]);
+            csr_copy->slices[i] = *slice_copy;
+            free(slice_copy);
+        }
+        return csr_copy;
+    }
+
     CSR3DTensor* csr_tensor = init_CSR3DTensor(tensor->num_slices, tensor->rows, tensor->cols, 0);
     if (!csr_tensor) {
         return NULL;
@@ -397,9 +457,14 @@ Matrix* eigsh(Matrix* A, int k, double** eigenvalues) {
 }
 
 Matrix* add_matrices(Matrix* A, Matrix* B) {
-    if (!A || !B || !A->data || !B->data || A->rows != B->rows || A->cols != B->cols ||
+    if (!A || !B || A->rows != B->rows || A->cols != B->cols ||
         A->rows <= 0 || A->cols <= 0) {
         fprintf(stderr, "Erreur : Matrices invalides ou incompatibles\n");
+        return NULL;
+    }
+
+    if ((!A->data && !A->csr_view) || (!B->data && !B->csr_view)) {
+        fprintf(stderr, "Erreur : Matrice sans donnees exploitables\n");
         return NULL;
     }
 
@@ -411,24 +476,57 @@ Matrix* add_matrices(Matrix* A, Matrix* B) {
     }
 
     for (int i = 0; i < A->rows; ++i) {
-        if (!A->data[i] || !B->data[i] || !C->data[i]) {
+        if ((A->data && !A->data[i]) || (B->data && !B->data[i]) || !C->data[i]) {
             fprintf(stderr, "Erreur : Ligne %d invalide\n", i);
             free_Matrix(C);
             return NULL;
         }
     }
 
-    for (int i = 0; i < A->rows; i += BLOCK_SIZE) {
-        int i_end = i + BLOCK_SIZE < A->rows ? i + BLOCK_SIZE : A->rows;
-        for (int j = 0; j < A->cols; j += BLOCK_SIZE) {
-            int j_end = j + BLOCK_SIZE < A->cols ? j + BLOCK_SIZE : A->cols;
-            for (int ii = i; ii < i_end; ++ii) {
-                double* A_row = A->data[ii];
-                double* B_row = B->data[ii];
-                double* C_row = C->data[ii];
-                for (int jj = j; jj < j_end; ++jj) {
-                    C_row[jj] = A_row[jj] + B_row[jj];
+    if (A->data && B->data) {
+        for (int i = 0; i < A->rows; i += BLOCK_SIZE) {
+            int i_end = i + BLOCK_SIZE < A->rows ? i + BLOCK_SIZE : A->rows;
+            for (int j = 0; j < A->cols; j += BLOCK_SIZE) {
+                int j_end = j + BLOCK_SIZE < A->cols ? j + BLOCK_SIZE : A->cols;
+                for (int ii = i; ii < i_end; ++ii) {
+                    double* A_row = A->data[ii];
+                    double* B_row = B->data[ii];
+                    double* C_row = C->data[ii];
+                    for (int jj = j; jj < j_end; ++jj) {
+                        C_row[jj] = A_row[jj] + B_row[jj];
+                    }
                 }
+            }
+        }
+        return C;
+    }
+
+    /* Cas mixte dense/CSR : le resultat reste dense car les appels aval
+       attendent une Matrix classique, mais aucune entree dense n'est lue
+       depuis la tranche CSR. */
+    if (A->data) {
+        for (int i = 0; i < A->rows; ++i) {
+            memcpy(C->data[i], A->data[i], (size_t)A->cols * sizeof(double));
+        }
+    }
+    if (B->data) {
+        for (int i = 0; i < B->rows; ++i) {
+            for (int j = 0; j < B->cols; ++j) {
+                C->data[i][j] += B->data[i][j];
+            }
+        }
+    }
+    if (A->csr_view) {
+        for (int i = 0; i < A->csr_view->rows; ++i) {
+            for (int p = A->csr_view->row_ptr[i]; p < A->csr_view->row_ptr[i + 1]; ++p) {
+                C->data[i][A->csr_view->col_index[p]] += A->csr_view->values[p];
+            }
+        }
+    }
+    if (B->csr_view) {
+        for (int i = 0; i < B->csr_view->rows; ++i) {
+            for (int p = B->csr_view->row_ptr[i]; p < B->csr_view->row_ptr[i + 1]; ++p) {
+                C->data[i][B->csr_view->col_index[p]] += B->csr_view->values[p];
             }
         }
     }
@@ -437,7 +535,7 @@ Matrix* add_matrices(Matrix* A, Matrix* B) {
 }
 
 Matrix* T_matrix(Matrix* A) {
-    if (!A || !A->data || A->rows <= 0 || A->cols <= 0) {
+    if (!A || A->rows <= 0 || A->cols <= 0 || (!A->data && !A->csr_view)) {
         fprintf(stderr, "Erreur : Matrice d'entrée invalide\n");
         return NULL;
     }
@@ -447,6 +545,15 @@ Matrix* T_matrix(Matrix* A) {
         fprintf(stderr, "Erreur : Allocation échouée\n");
         free_Matrix(T);
         return NULL;
+    }
+
+    if (!A->data && A->csr_view) {
+        for (int i = 0; i < A->csr_view->rows; ++i) {
+            for (int p = A->csr_view->row_ptr[i]; p < A->csr_view->row_ptr[i + 1]; ++p) {
+                T->data[A->csr_view->col_index[p]][i] = A->csr_view->values[p];
+            }
+        }
+        return T;
     }
 
     const int rows = A->rows;
@@ -469,13 +576,13 @@ Matrix* T_matrix(Matrix* A) {
 
     for (int i = 0; i < rows; i += BLOCK_SIZE) {
         const int i_end = (i + BLOCK_SIZE) < rows ? (i + BLOCK_SIZE) : rows;
-        
+
         for (int j = 0; j < cols; j += BLOCK_SIZE) {
             const int j_end = (j + BLOCK_SIZE) < cols ? (j + BLOCK_SIZE) : cols;
-            
+
             for (int ii = i; ii < i_end; ++ii) {
                 const double* a_row = A->data[ii];
-                
+
                 for (int jj = j; jj < j_end; ++jj) {
                     T->data[jj][ii] = a_row[jj];
                 }
@@ -545,6 +652,8 @@ Tensor3D* init_tensor3D(const int num_slices, const int rows, const int cols) {
     tensor->num_slices = num_slices;
     tensor->rows = rows;
     tensor->cols = cols;
+    tensor->csr = NULL;
+    tensor->owns_csr = 0;
 
     tensor->slices = (Matrix*)malloc(num_slices * sizeof(Matrix));
     if (!tensor->slices) {
@@ -564,6 +673,7 @@ Tensor3D* init_tensor3D(const int num_slices, const int rows, const int cols) {
     for (int i = 0; i < num_slices; i++) {
         tensor->slices[i].rows = rows;
         tensor->slices[i].cols = cols;
+        tensor->slices[i].csr_view = NULL;
         
         tensor->slices[i].data = (double**)malloc(rows * sizeof(double*));
         if (!tensor->slices[i].data) {
@@ -581,6 +691,41 @@ Tensor3D* init_tensor3D(const int num_slices, const int rows, const int cols) {
         for (int j = 0; j < rows; j++) {
             tensor->slices[i].data[j] = slice_start + j * cols;
         }
+    }
+
+    return tensor;
+}
+
+Tensor3D* tensor_from_csr(CSR3DTensor* csr_tensor, int take_ownership) {
+    if (!csr_tensor || csr_tensor->num_slices <= 0 ||
+        csr_tensor->rows <= 0 || csr_tensor->cols <= 0) {
+        fprintf(stderr, "Erreur : tenseur CSR invalide\n");
+        return NULL;
+    }
+
+    Tensor3D* tensor = (Tensor3D*)calloc(1, sizeof(Tensor3D));
+    if (!tensor) {
+        fprintf(stderr, "Erreur : allocation du wrapper Tensor3D CSR\n");
+        return NULL;
+    }
+
+    tensor->slices = (Matrix*)calloc((size_t)csr_tensor->num_slices, sizeof(Matrix));
+    if (!tensor->slices) {
+        free(tensor);
+        return NULL;
+    }
+
+    tensor->num_slices = csr_tensor->num_slices;
+    tensor->rows = csr_tensor->rows;
+    tensor->cols = csr_tensor->cols;
+    tensor->csr = csr_tensor;
+    tensor->owns_csr = take_ownership ? 1 : 0;
+
+    for (int i = 0; i < tensor->num_slices; ++i) {
+        tensor->slices[i].rows = csr_tensor->rows;
+        tensor->slices[i].cols = csr_tensor->cols;
+        tensor->slices[i].data = NULL;
+        tensor->slices[i].csr_view = &csr_tensor->slices[i];
     }
 
     return tensor;
@@ -630,6 +775,10 @@ void free_tensor(Tensor3D* tensor) {
         free(tensor->slices);
     }
 
+    if (tensor->owns_csr && tensor->csr) {
+        free_CSR3DTensor(tensor->csr);
+    }
+
     free(tensor);
 }
 
@@ -642,6 +791,7 @@ Matrix* init_Matrix(int rows, int cols) {
 
     matrix->rows = rows;
     matrix->cols = cols;
+    matrix->csr_view = NULL;
 
     matrix->data = (double**)malloc(rows * sizeof(double*));
     if (matrix->data == NULL) {
@@ -860,8 +1010,16 @@ Matrix* copy_Matrix(Matrix* src) {
     Matrix* dest = init_Matrix(src->rows, src->cols);
     if (!dest) return NULL;
 
-    for (int i = 0; i < src->rows; i++) {
-        memcpy(dest->data[i], src->data[i], src->cols * sizeof(double));
+    if (src->data) {
+        for (int i = 0; i < src->rows; i++) {
+            memcpy(dest->data[i], src->data[i], (size_t)src->cols * sizeof(double));
+        }
+    } else if (src->csr_view) {
+        for (int i = 0; i < src->csr_view->rows; ++i) {
+            for (int p = src->csr_view->row_ptr[i]; p < src->csr_view->row_ptr[i + 1]; ++p) {
+                dest->data[i][src->csr_view->col_index[p]] = src->csr_view->values[p];
+            }
+        }
     }
     return dest;
 }
@@ -870,6 +1028,12 @@ Tensor3D* copy_Tensor3D(Tensor3D* src) {
     if (src == NULL) {
         fprintf(stderr, "Erreur : tenseur source NULL\n");
         return NULL;
+    }
+
+    if (src->csr) {
+        CSR3DTensor* csr_copy = tensor_to_csr(src);
+        if (!csr_copy) return NULL;
+        return tensor_from_csr(csr_copy, 1);
     }
 
     Tensor3D* dest = init_tensor3D(src->num_slices, src->rows, src->cols);
@@ -1182,6 +1346,10 @@ Matrix* soustraction(Matrix* A, Matrix* B) {
         fprintf(stderr, "Erreur : dimensions incompatibles.\n");
         return NULL;
     }
+    if ((!A->data && !A->csr_view) || (!B->data && !B->csr_view)) {
+        fprintf(stderr, "Erreur : matrice sans donnees exploitables.\n");
+        return NULL;
+    }
 
     const int n = A->rows;
     const int m = A->cols;
@@ -1193,27 +1361,55 @@ Matrix* soustraction(Matrix* A, Matrix* B) {
         return NULL;
     }
 
-    for (int i = 0; i < n; i += BLOCK_SIZE) {
-        const int i_end = (i + BLOCK_SIZE) < n ? (i + BLOCK_SIZE) : n;
-        
-        for (int j = 0; j < m; j += BLOCK_SIZE) {
-            const int j_end = (j + BLOCK_SIZE) < m ? (j + BLOCK_SIZE) : m;
-            
-            for (int ii = i; ii < i_end; ii++) {
-                double* a_row = A->data[ii];
-                double* b_row = B->data[ii];
-                double* r_row = result->data[ii];
-                
-                for (int jj = j; jj < j_end; jj++) {
-                    r_row[jj] = a_row[jj] - b_row[jj];
+    if (A->data && B->data) {
+        for (int i = 0; i < n; i += BLOCK_SIZE) {
+            const int i_end = (i + BLOCK_SIZE) < n ? (i + BLOCK_SIZE) : n;
+
+            for (int j = 0; j < m; j += BLOCK_SIZE) {
+                const int j_end = (j + BLOCK_SIZE) < m ? (j + BLOCK_SIZE) : m;
+
+                for (int ii = i; ii < i_end; ii++) {
+                    double* a_row = A->data[ii];
+                    double* b_row = B->data[ii];
+                    double* r_row = result->data[ii];
+
+                    for (int jj = j; jj < j_end; jj++) {
+                        r_row[jj] = a_row[jj] - b_row[jj];
+                    }
                 }
+            }
+        }
+        return result;
+    }
+
+    if (A->data) {
+        for (int i = 0; i < n; ++i) {
+            memcpy(result->data[i], A->data[i], (size_t)m * sizeof(double));
+        }
+    }
+    if (A->csr_view) {
+        for (int i = 0; i < A->csr_view->rows; ++i) {
+            for (int p = A->csr_view->row_ptr[i]; p < A->csr_view->row_ptr[i + 1]; ++p) {
+                result->data[i][A->csr_view->col_index[p]] += A->csr_view->values[p];
+            }
+        }
+    }
+    if (B->data) {
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < m; ++j) {
+                result->data[i][j] -= B->data[i][j];
+            }
+        }
+    } else if (B->csr_view) {
+        for (int i = 0; i < B->csr_view->rows; ++i) {
+            for (int p = B->csr_view->row_ptr[i]; p < B->csr_view->row_ptr[i + 1]; ++p) {
+                result->data[i][B->csr_view->col_index[p]] -= B->csr_view->values[p];
             }
         }
     }
 
     return result;
 }
-
 Matrix* dot_csr(CSRMatrix* A, Matrix* B) {
     if (!A || !B || A->cols != B->rows) {
         fprintf(stderr, "Erreur : dimensions incompatibles ou matrices NULL\n");
@@ -1489,7 +1685,60 @@ Matrix* create_scaled_identity(int size, double scalar) {
     return result;
 }
 
+double tensor_get_value(const Tensor3D* tensor, int slice, int row, int col) {
+    if (!tensor || slice < 0 || slice >= tensor->num_slices ||
+        row < 0 || row >= tensor->rows || col < 0 || col >= tensor->cols) {
+        return 0.0;
+    }
+
+    const Matrix* mat = &tensor->slices[slice];
+    if (mat->data) {
+        return mat->data[row][col];
+    }
+    return csr_get_value(mat->csr_view, row, col);
+}
+
+int tensor_set_zero(Tensor3D* tensor, int slice, int row, int col) {
+    if (!tensor || slice < 0 || slice >= tensor->num_slices ||
+        row < 0 || row >= tensor->rows || col < 0 || col >= tensor->cols) {
+        return 0;
+    }
+
+    Matrix* mat = &tensor->slices[slice];
+    if (mat->data) {
+        mat->data[row][col] = 0.0;
+        return 1;
+    }
+
+    if (!tensor->csr || !mat->csr_view) {
+        return 0;
+    }
+
+    CSRMatrix* csr = &tensor->csr->slices[slice];
+    for (int p = csr->row_ptr[row]; p < csr->row_ptr[row + 1]; ++p) {
+        if (csr->col_index[p] == col) {
+            csr->values[p] = 0.0;
+            return 1;
+        }
+    }
+    return 1;
+}
+
 int count_nonzero_elements(Tensor3D* tensor) {
+    if (!tensor) return 0;
+    if (tensor->csr) {
+        int count = 0;
+        for (int k = 0; k < tensor->csr->num_slices; k++) {
+            CSRMatrix* slice = &tensor->csr->slices[k];
+            for (int p = 0; p < slice->nnz; ++p) {
+                if (fabs(slice->values[p]) > EPSILON) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     int count = 0;
     for (int k = 0; k < tensor->num_slices; k++) {
         Matrix* slice = &tensor->slices[k];

@@ -1,8 +1,3 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : décomposition SVD dense utilisée pour l'initialisation.
- */
 
 #include "svd.h"
 
