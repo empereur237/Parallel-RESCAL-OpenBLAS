@@ -1,0 +1,14 @@
+{
+  "dataset_name": "nations",
+  "mat_filename": "dnations.mat",
+  "source_variable": "R",
+  "tensor_description": "dense tensor shape=(n,n,m)=(14,14,56)",
+  "n_entities": 14,
+  "n_relations": 56,
+  "total_nnz": 2024,
+  "density": 0.18440233236151604,
+  "format": "legacy_coo_implicit_value_1.0",
+  "entity_labels_source": "countrynames",
+  "relation_labels_source": "relnnames",
+  "notes": "Each slice file has: n_rows n_cols nnz, then one non-zero coordinate row col per line. Values are implicit 1.0."
+}

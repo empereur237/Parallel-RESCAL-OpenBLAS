@@ -1,0 +1,3 @@
+n_entities  14541
+n_relations 237
+total_nnz   310116

@@ -1,9 +1,3 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : structures et primitives numériques pour RESCAL-ALS.
- */
-
 #ifndef UTILES_H
 #define UTILES_H
 #define _POSIX_C_SOURCE 200112L
@@ -40,34 +34,41 @@
 //#define NUM_THREADS 4
 //#define FOLDS 10
 #define MAT_AT(mat, i, j) ((mat)->data[(i) * (mat)->cols + (j)])
+
+typedef struct CSRMatrix CSRMatrix;
+typedef struct CSR3DTensor CSR3DTensor;
+
 typedef struct {
     int rows;
     int cols;
     double** data;
+    const CSRMatrix* csr_view;  /* Vue CSR optionnelle pour les tranches non denses. */
 } Matrix;
 
-typedef struct {
+struct CSRMatrix {
     int rows;
     int cols;
     int nnz;
     double* values;
     int* col_index;
     int* row_ptr;
-} CSRMatrix;
+};
 
 typedef struct {
     Matrix* slices;
     int num_slices;
     int rows;
     int cols;
+    CSR3DTensor* csr;
+    int owns_csr;
 } Tensor3D;
 
-typedef struct {
+struct CSR3DTensor {
     CSRMatrix* slices;
     int num_slices;
     int rows;
     int cols;
-} CSR3DTensor;
+};
 
 typedef struct {
     double *data;
@@ -113,6 +114,12 @@ void check_slices(Tensor3D* X);
 CSRMatrix* dense_to_csr(Matrix* dense);
 
 CSR3DTensor* tensor_to_csr(Tensor3D* tensor);
+
+Tensor3D* tensor_from_csr(CSR3DTensor* csr_tensor, int take_ownership);
+
+double tensor_get_value(const Tensor3D* tensor, int slice, int row, int col);
+
+int tensor_set_zero(Tensor3D* tensor, int slice, int row, int col);
 
 Matrix* init_Matrix(int rows, int cols);
 

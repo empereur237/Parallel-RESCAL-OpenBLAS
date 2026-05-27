@@ -1,0 +1,12 @@
+dataset_name	alyawarra
+mat_filename	alyawarradata.mat
+source_variable	Rs
+tensor_description	dense tensor shape=(n,n,m)=(104,104,26)
+n_entities	104
+n_relations	26
+total_nnz	10790
+density	0.038369082840236685
+format	legacy_coo_implicit_value_1.0
+entity_labels_source	generated
+relation_labels_source	generated
+notes	Each slice file has: n_rows n_cols nnz, then one non-zero coordinate row col per line. Values are implicit 1.0.

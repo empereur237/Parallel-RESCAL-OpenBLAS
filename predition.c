@@ -1,14 +1,8 @@
-/*
- * Auteur      : Projet RESCAL-ALS
- * Date        : 2026
- * Description : chargement des tenseurs, prédiction et métriques.
- */
-
 #include "predition.h"
 #include <assert.h>
+#include <sys/stat.h>
 
 #define _DEFAULT_SOURCE
-//#define _POSIX_C_SOURCE 200809L
 
 FileList* init_FileList(int initial_capacity) {
     if (initial_capacity <= 0) {
@@ -110,86 +104,231 @@ Matrix* read_matrix_from_file(const char* filename) {
     return matrix;
 }
 
+static int parse_tensor_meta(const char* meta_path, int* n_entities, int* n_relations) {
+    FILE* f = fopen(meta_path, "r");
+    if (!f) {
+        fprintf(stderr, "[ERREUR] Impossible d'ouvrir le fichier meta : %s\n", meta_path);
+        return 0;
+    }
+
+    char line[512];
+    *n_entities = 0;
+    *n_relations = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        char key[128];
+        int value;
+
+        if (sscanf(line, "%127s %d", key, &value) != 2) {
+            continue;
+        }
+
+        if (strcmp(key, "n_entities") == 0) {
+            *n_entities = value;
+        } else if (strcmp(key, "n_relations") == 0) {
+            *n_relations = value;
+        }
+    }
+
+    fclose(f);
+
+    if (*n_entities <= 0 || *n_relations <= 0) {
+        fprintf(stderr,
+                "[ERREUR] meta.txt invalide : n_entities=%d, n_relations=%d\n",
+                *n_entities, *n_relations);
+        return 0;
+    }
+
+    return 1;
+}
+
+static int file_is_empty_or_missing(const char* filepath, int* is_missing) {
+    struct stat st;
+
+    if (stat(filepath, &st) != 0) {
+        if (is_missing) {
+            *is_missing = 1;
+        }
+        return 1;
+    }
+
+    if (is_missing) {
+        *is_missing = 0;
+    }
+
+    return st.st_size == 0;
+}
+
+static CSRMatrix* load_csr_slice(const char* filepath, int n_rows, int n_cols) {
+    /*
+     * Lit une tranche au format :
+     *   ligne 1   : "n_rows n_cols nnz"
+     *   lignes 2+ : "row col"
+     *
+     * La valeur est implicite et vaut 1.0. La construction se fait directement
+     * en CSR afin de ne jamais allouer de matrice dense intermediaire.
+     */
+    FILE* f = fopen(filepath, "r");
+    if (!f) {
+        fprintf(stderr, "[ERREUR] Impossible d'ouvrir : %s\n", filepath);
+        return NULL;
+    }
+
+    int file_rows, file_cols, nnz;
+    if (fscanf(f, "%d %d %d", &file_rows, &file_cols, &nnz) != 3) {
+        fprintf(stderr, "[ERREUR] En-tete malforme dans : %s\n", filepath);
+        fclose(f);
+        return NULL;
+    }
+
+    if (file_rows != n_rows || file_cols != n_cols || nnz < 0) {
+        fprintf(stderr,
+                "[ERREUR] Dimensions ou nnz incoherents dans %s : "
+                "attendu %dx%d, trouve %dx%d, nnz=%d\n",
+                filepath, n_rows, n_cols, file_rows, file_cols, nnz);
+        fclose(f);
+        return NULL;
+    }
+
+    CSRMatrix* csr = init_CSRMatrix(n_rows, n_cols, nnz);
+    if (!csr) {
+        fclose(f);
+        return NULL;
+    }
+
+    int* rows_tmp = (nnz > 0) ? (int*)malloc((size_t)nnz * sizeof(int)) : NULL;
+    int* cols_tmp = (nnz > 0) ? (int*)malloc((size_t)nnz * sizeof(int)) : NULL;
+    if (nnz > 0 && (!rows_tmp || !cols_tmp)) {
+        fprintf(stderr, "[ERREUR] Allocation temporaire impossible pour : %s\n", filepath);
+        free(rows_tmp);
+        free(cols_tmp);
+        free_CSRMatrix(csr);
+        free(csr);
+        fclose(f);
+        return NULL;
+    }
+
+    for (int t = 0; t < nnz; t++) {
+        if (fscanf(f, "%d %d", &rows_tmp[t], &cols_tmp[t]) != 2) {
+            fprintf(stderr, "[ERREUR] Coordonnees %d malformees dans %s\n", t, filepath);
+            free(rows_tmp);
+            free(cols_tmp);
+            free_CSRMatrix(csr);
+            free(csr);
+            fclose(f);
+            return NULL;
+        }
+
+        if (rows_tmp[t] < 0 || rows_tmp[t] >= n_rows ||
+            cols_tmp[t] < 0 || cols_tmp[t] >= n_cols) {
+            fprintf(stderr,
+                    "[ERREUR] Indice hors bornes aux coordonnees %d "
+                    "dans %s : (%d, %d)\n",
+                    t, filepath, rows_tmp[t], cols_tmp[t]);
+            free(rows_tmp);
+            free(cols_tmp);
+            free_CSRMatrix(csr);
+            free(csr);
+            fclose(f);
+            return NULL;
+        }
+    }
+    fclose(f);
+
+    /* Passe 1 : comptage par ligne, puis somme prefixe dans row_ptr. */
+    memset(csr->row_ptr, 0, ((size_t)n_rows + 1) * sizeof(int));
+    for (int t = 0; t < nnz; t++) {
+        csr->row_ptr[rows_tmp[t] + 1]++;
+    }
+
+    for (int i = 0; i < n_rows; i++) {
+        csr->row_ptr[i + 1] += csr->row_ptr[i];
+    }
+
+    /* Passe 2 : remplissage stable des colonnes et des valeurs binaires. */
+    int* cursor = (int*)calloc((size_t)n_rows, sizeof(int));
+    if (!cursor) {
+        fprintf(stderr, "[ERREUR] Allocation du curseur CSR impossible pour : %s\n", filepath);
+        free(rows_tmp);
+        free(cols_tmp);
+        free_CSRMatrix(csr);
+        free(csr);
+        return NULL;
+    }
+
+    for (int t = 0; t < nnz; t++) {
+        const int row = rows_tmp[t];
+        const int pos = csr->row_ptr[row] + cursor[row];
+
+        csr->col_index[pos] = cols_tmp[t];
+        csr->values[pos] = 1.0;
+        cursor[row]++;
+    }
+
+    free(rows_tmp);
+    free(cols_tmp);
+    free(cursor);
+
+    return csr;
+}
+
 Tensor3D* load_tensor_from_directory(const char* directory_path) {
-    DIR* dir = opendir(directory_path);
-    if (dir == NULL) {
-        fprintf(stderr, "Erreur : impossible d'ouvrir le répertoire %s\n", directory_path);
+    char meta_path[MAX_FILENAME];
+    int n_entities;
+    int n_relations;
+    long long total_nnz = 0;
+
+    snprintf(meta_path, sizeof(meta_path), "%s/meta.txt", directory_path);
+    if (!parse_tensor_meta(meta_path, &n_entities, &n_relations)) {
         return NULL;
     }
 
-    FileList* file_list = init_FileList(10);
-    if (!file_list) {
-        closedir(dir);
+    CSR3DTensor* csr_tensor = init_CSR3DTensor(n_relations, n_entities, n_entities, 0);
+    if (!csr_tensor) {
+        fprintf(stderr, "[ERREUR] Allocation du tenseur CSR impossible\n");
         return NULL;
     }
 
-    struct dirent* entry;
-    char filepath[MAX_FILENAME];
+    for (int k = 0; k < n_relations; k++) {
+        char slice_path[MAX_FILENAME];
+        int is_missing = 0;
 
-    while ((entry = readdir(dir)) != NULL) {
-        if (strstr(entry->d_name, ".txt")) {
-            snprintf(filepath, sizeof(filepath), "%s/%s", directory_path, entry->d_name);
-            add_filename(file_list, filepath);
-        }
-    }
-    closedir(dir);
+        snprintf(slice_path, sizeof(slice_path), "%s/slice_%04d.txt", directory_path, k);
 
-    if (file_list->count == 0) {
-        fprintf(stderr, "Erreur : aucun fichier .txt trouvé dans le répertoire %s\n", directory_path);
-        free_FileList(file_list);
-        return NULL;
-    }
-
-    /* Ordre déterministe des tranches. */
-    qsort(file_list->filenames, file_list->count, sizeof(char*), compare_filenames);
-
-    Matrix* first_matrix = read_matrix_from_file(file_list->filenames[0]);
-    if (first_matrix == NULL) {
-        free_FileList(file_list);
-        return NULL;
-    }
-
-    Tensor3D* tensor = init_tensor3D(file_list->count, first_matrix->rows, first_matrix->cols);
-    if (tensor == NULL) {
-        fprintf(stderr, "Erreur : échec de l'allocation mémoire pour le tenseur\n");
-        free_Matrix(first_matrix);
-        free_FileList(file_list);
-        return NULL;
-    }
-
-    for (int i = 0; i < first_matrix->rows; i++) {
-        for (int j = 0; j < first_matrix->cols; j++) {
-            tensor->slices[0].data[i][j] = first_matrix->data[i][j];
-        }
-    }
-    free_Matrix(first_matrix);
-
-    for (int k = 1; k < file_list->count; k++) {
-        Matrix* temp_matrix = read_matrix_from_file(file_list->filenames[k]);
-        if (temp_matrix == NULL) {
-            fprintf(stderr, "Erreur : impossible de lire la matrice dans le fichier %s\n", file_list->filenames[k]);
-            free_tensor(tensor);
-            free_FileList(file_list);
-            return NULL;
-        }
-
-        if (temp_matrix->rows != tensor->rows || temp_matrix->cols != tensor->cols) {
-            fprintf(stderr, "Erreur : dimensions incompatibles dans %s\n", file_list->filenames[k]);
-            free_Matrix(temp_matrix);
-            free_tensor(tensor);
-            free_FileList(file_list);
-            return NULL;
-        }
-
-        for (int i = 0; i < temp_matrix->rows; i++) {
-            for (int j = 0; j < temp_matrix->cols; j++) {
-                tensor->slices[k].data[i][j] = temp_matrix->data[i][j];
+        if (file_is_empty_or_missing(slice_path, &is_missing)) {
+            if (is_missing) {
+                fprintf(stderr,
+                        "[INFO] Tranche absente traitee comme vide : %s\n",
+                        slice_path);
+            } else {
+                fprintf(stderr,
+                        "[INFO] Tranche vide traitee comme CSR nnz=0 : %s\n",
+                        slice_path);
             }
+            continue;
         }
-        free_Matrix(temp_matrix);
+
+        CSRMatrix* slice = load_csr_slice(slice_path, n_entities, n_entities);
+        if (!slice) {
+            free_CSR3DTensor(csr_tensor);
+            return NULL;
+        }
+
+        free_CSRMatrix(&csr_tensor->slices[k]);
+        csr_tensor->slices[k] = *slice;
+        total_nnz += slice->nnz;
+        free(slice);
     }
 
-    free_FileList(file_list);
+    Tensor3D* tensor = tensor_from_csr(csr_tensor, 1);
+    if (!tensor) {
+        free_CSR3DTensor(csr_tensor);
+        return NULL;
+    }
+
+    printf("[Data]   n_entities:%d | n_relations:%d | total_nnz:%lld\n",
+           n_entities, n_relations, total_nnz);
+
     return tensor;
 }
 
@@ -271,10 +410,18 @@ Tensor3D* innerfold(Tensor3D* T, Tensor3D* P, int* mask_idx, int mask_length,
                     int rank, int maxIter, double conv,
                     double lambda_A, double lambda_R, double lambda_Z) {
     Tensor3D* T_train = copy_Tensor3D(T);
+    if (!T_train) {
+        return NULL;
+    }
+
     for (int i = 0; i < mask_length; i++) {
         int a, b, c;
         unravel_index(mask_idx[i], T->rows, T->num_slices, &a, &b, &c);
-        T_train->slices[c].data[a][b] = 0.0;
+        if (!tensor_set_zero(T_train, c, a, b)) {
+            fprintf(stderr,
+                    "Erreur : masquage impossible pour l'indice (%d, %d, %d)\n",
+                    a, b, c);
+        }
     }
     resultat trained_model = rescal_als(T_train, rank, "random",
                                         maxIter, conv,
@@ -420,8 +567,8 @@ double calculate_auc_pr(Tensor3D* T, int* target_idx, int target_length, Tensor3
     for (int i = 0; i < target_length; i++) {
         int a, b, c;
         unravel_index(target_idx[i], T->rows, T->num_slices, &a, &b, &c);
-        y_true[i] = T->slices[c].data[a][b];
-        y_pred[i] = predicted_tensor->slices[c].data[a][b];
+        y_true[i] = tensor_get_value(T, c, a, b);
+        y_pred[i] = tensor_get_value(predicted_tensor, c, a, b);
     }
 
     double auc_pr = compute_auc_pr(y_true, y_pred, target_length);

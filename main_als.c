@@ -1,7 +1,7 @@
 /*
- * Auteur      : Projet RESCAL-ALS
+ * Auteur      : TONLIO DJIOGO NELSON MANDELA (Projet RESCAL-ALS)
  * Date        : 2026
- * Description : exécution séquentielle des expériences RESCAL-ALS.
+ * Description : exécution de RESCAL-ALS parallel avec Phtrads.
  */
 
 #include "predition.h"
@@ -14,6 +14,10 @@
 
 #define RESULTS_FILE "rescal_results.csv"
 #define FOLDS 10
+#define MAX_VALIDATION_POSITIVES 10000
+#define MAX_LARGE_VALIDATION_POSITIVES 2000
+#define NEGATIVES_PER_POSITIVE 1
+#define LARGE_TENSOR_DENSE_ENTRIES_THRESHOLD 100000000LL
 
 typedef struct {
     const char* name;
@@ -35,8 +39,170 @@ typedef struct {
     int capacity;
 } ProcessedSet;
 
+typedef struct {
+    int row;
+    int col;
+    int slice;
+} ValidationSample;
+
 static double elapsed_seconds(struct timeval start, struct timeval end) {
     return (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+}
+
+static void shuffle_validation_samples(ValidationSample* samples, int size) {
+    if (!samples || size <= 1) return;
+
+    for (int i = size - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        ValidationSample tmp = samples[i];
+        samples[i] = samples[j];
+        samples[j] = tmp;
+    }
+}
+
+static ValidationSample* collect_positive_samples(Tensor3D* tensor, int* out_count) {
+    if (!tensor || !out_count) return NULL;
+
+    int capacity = count_nonzero_elements(tensor);
+    if (capacity <= 0) {
+        *out_count = 0;
+        return NULL;
+    }
+
+    ValidationSample* samples = malloc((size_t)capacity * sizeof(ValidationSample));
+    if (!samples) {
+        fprintf(stderr, "Erreur : allocation des echantillons positifs\n");
+        *out_count = 0;
+        return NULL;
+    }
+
+    int count = 0;
+    if (tensor->csr) {
+        for (int k = 0; k < tensor->csr->num_slices; k++) {
+            CSRMatrix* slice = &tensor->csr->slices[k];
+            for (int row = 0; row < slice->rows; row++) {
+                for (int p = slice->row_ptr[row]; p < slice->row_ptr[row + 1]; p++) {
+                    if (fabs(slice->values[p]) > EPSILON && count < capacity) {
+                        samples[count++] = (ValidationSample){row, slice->col_index[p], k};
+                    }
+                }
+            }
+        }
+    } else {
+        for (int k = 0; k < tensor->num_slices; k++) {
+            for (int row = 0; row < tensor->rows; row++) {
+                for (int col = 0; col < tensor->cols; col++) {
+                    if (fabs(tensor->slices[k].data[row][col]) > EPSILON && count < capacity) {
+                        samples[count++] = (ValidationSample){row, col, k};
+                    }
+                }
+            }
+        }
+    }
+
+    *out_count = count;
+    return samples;
+}
+
+static ValidationSample random_negative_sample(Tensor3D* tensor) {
+    ValidationSample sample = {0, 0, 0};
+
+    for (int attempts = 0; attempts < 10000; attempts++) {
+        int row = rand() % tensor->rows;
+        int col = rand() % tensor->cols;
+        int slice = rand() % tensor->num_slices;
+
+        if (fabs(tensor_get_value(tensor, slice, row, col)) <= EPSILON) {
+            return (ValidationSample){row, col, slice};
+        }
+    }
+
+    return sample;
+}
+
+static double score_rescal_entry(Matrix* A, Tensor3D* R, int slice, int row, int col) {
+    if (!A || !R || slice < 0 || slice >= R->num_slices ||
+        row < 0 || row >= A->rows || col < 0 || col >= A->rows) {
+        return 0.0;
+    }
+
+    Matrix* Rk = &R->slices[slice];
+    double score = 0.0;
+
+    for (int i = 0; i < A->cols; i++) {
+        double left = A->data[row][i];
+        if (fabs(left) <= EPSILON) continue;
+
+        for (int j = 0; j < A->cols; j++) {
+            score += left * Rk->data[i][j] * A->data[col][j];
+        }
+    }
+
+    return score;
+}
+
+static double run_sampled_fold_auc(Tensor3D* T, Tensor3D* P,
+                                   ValidationSample* positives, int positive_count,
+                                   int rank, int maxIter, double conv,
+                                   double lambda_A, double lambda_R, double lambda_Z) {
+    if (!T || !positives || positive_count <= 0) return 0.0;
+
+    Tensor3D* T_train = copy_Tensor3D(T);
+    if (!T_train) {
+        fprintf(stderr, "Erreur : copie du tenseur d'entrainement impossible\n");
+        return 0.0;
+    }
+
+    for (int i = 0; i < positive_count; i++) {
+        tensor_set_zero(T_train, positives[i].slice, positives[i].row, positives[i].col);
+    }
+
+    resultat trained_model = rescal_als(T_train, rank, "random",
+                                        maxIter, conv,
+                                        lambda_A, lambda_R, lambda_Z,
+                                        P, 0);
+    free_tensor(T_train);
+
+    if (!trained_model.A || !trained_model.R) {
+        free_resultat(&trained_model);
+        return 0.0;
+    }
+
+    int total_samples = positive_count * (1 + NEGATIVES_PER_POSITIVE);
+    double* y_true = malloc((size_t)total_samples * sizeof(double));
+    double* y_pred = malloc((size_t)total_samples * sizeof(double));
+    if (!y_true || !y_pred) {
+        fprintf(stderr, "Erreur : allocation des scores de validation\n");
+        free(y_true);
+        free(y_pred);
+        free_resultat(&trained_model);
+        return 0.0;
+    }
+
+    int pos = 0;
+    for (int i = 0; i < positive_count; i++) {
+        y_true[pos] = 1.0;
+        y_pred[pos] = score_rescal_entry(trained_model.A, trained_model.R,
+                                         positives[i].slice,
+                                         positives[i].row,
+                                         positives[i].col);
+        pos++;
+
+        for (int n = 0; n < NEGATIVES_PER_POSITIVE; n++) {
+            ValidationSample neg = random_negative_sample(T);
+            y_true[pos] = 0.0;
+            y_pred[pos] = score_rescal_entry(trained_model.A, trained_model.R,
+                                             neg.slice, neg.row, neg.col);
+            pos++;
+        }
+    }
+
+    double auc = compute_auc_pr(y_true, y_pred, total_samples);
+
+    free(y_true);
+    free(y_pred);
+    free_resultat(&trained_model);
+    return auc;
 }
 
 static void processed_set_init(ProcessedSet* set) {
@@ -237,17 +403,17 @@ int main(int argc, char* argv[]) {
     }
 
     DatasetConfig datasets[] = {
-        { "kinships", "./kinships" },
-        { "umls",     "./umls"     },
-        { "nations",  "./nations"  },
-        /* { "last_fm", "./last_fm" }, */
+       // { "kinships", "./kinships" },
+       // { "umls",     "./umls"     },
+        //{ "nations",  "./nations"  },
+         { "fb15k237", "./fb15k237_csr" },
     };
     int num_datasets = (int)(sizeof(datasets) / sizeof(datasets[0]));
 
     ALSConfig configs[] = {
-        { 50,  100, 1e-4, 5.0,  5.0,  5.0 },
-        { 90,  100, 1e-4, 5.0,  5.0,  5.0 },
-        { 100, 100, 1e-4, 10.0, 10.0, 5.0 },
+       // { 50,  100, 1e-4, 5.0,  5.0,  5.0 },
+       // { 90,  100, 1e-4, 5.0,  5.0,  5.0 },
+        { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
         /* Ajouter d'autres configurations ici. */
     };
     int num_configs = (int)(sizeof(configs) / sizeof(configs[0]));
@@ -297,9 +463,8 @@ int main(int argc, char* argv[]) {
             }
 
             int e = T->rows;
-            int k = T->num_slices;
             int nnz = count_nonzero_elements(T);
-            int tensor_size = e * e * k;
+            long long dense_entries = (long long)T->rows * T->cols * T->num_slices;
             printf("[Data]   nnz:%d | import_time:%.2f s\n", nnz, import_time);
 
             Tensor3D* P = NULL;
@@ -307,49 +472,64 @@ int main(int argc, char* argv[]) {
                 P = create_random_binary_tensor(attr, e, config.rank);
             }
 
-            int* IDX = malloc((size_t)tensor_size * sizeof(int));
+            int positive_count = 0;
+            ValidationSample* positives = collect_positive_samples(T, &positive_count);
+            if (!positives || positive_count <= 0) {
+                fprintf(stderr, "Erreur : aucun echantillon positif pour la validation\n");
+                free(positives);
+                free_tensor(T);
+                if (P) free_tensor(P);
+                continue;
+            }
+
+            shuffle_validation_samples(positives, positive_count);
+            int validation_cap = (dense_entries > LARGE_TENSOR_DENSE_ENTRIES_THRESHOLD)
+                ? MAX_LARGE_VALIDATION_POSITIVES
+                : MAX_VALIDATION_POSITIVES;
+            if (positive_count > validation_cap) {
+                positive_count = validation_cap;
+            }
+
             double* AUC_test = calloc(FOLDS, sizeof(double));
-            if (!IDX || !AUC_test) {
-                fprintf(stderr, "Erreur : allocation des donnees de validation\n");
-                free(IDX);
+            if (!AUC_test) {
+                fprintf(stderr, "Erreur : allocation des resultats de validation\n");
+                free(positives);
                 free(AUC_test);
                 free_tensor(T);
                 if (P) free_tensor(P);
                 continue;
             }
 
-            for (int i = 0; i < tensor_size; i++) {
-                IDX[i] = i;
-            }
-            shuffle(IDX, tensor_size);
+            int requested_folds = FOLDS;
+            int active_folds = (positive_count < requested_folds) ? positive_count : requested_folds;
+            int fold_size = positive_count / active_folds;
+            printf("[Eval]   positifs:%d | neg/pos:%d | folds:%d | mode:%s\n",
+                   positive_count, NEGATIVES_PER_POSITIVE, active_folds,
+                   (dense_entries > LARGE_TENSOR_DENSE_ENTRIES_THRESHOLD)
+                       ? "cross-validation CSR echantillonnee"
+                       : "cross-validation");
 
-            int fold_size = tensor_size / FOLDS;
             struct timeval run_start, run_end;
             gettimeofday(&run_start, NULL);
 
-            for (int f = 0; f < FOLDS; f++) {
-                int* idx_test = IDX + f * fold_size;
-                Tensor3D* predicted_tensor = innerfold(
-                    T, P, idx_test, fold_size,
+            for (int f = 0; f < active_folds; f++) {
+                int start = f * fold_size;
+                int current_fold_size = (f == active_folds - 1)
+                    ? positive_count - start
+                    : fold_size;
+
+                AUC_test[f] = run_sampled_fold_auc(
+                    T, P, positives + start, current_fold_size,
                     config.rank, config.maxIter, config.conv,
                     config.lambda_A, config.lambda_R, config.lambda_Z
                 );
-
-                if (!predicted_tensor) {
-                    fprintf(stderr, "Erreur : prediction impossible au fold %d\n", f);
-                    AUC_test[f] = 0.0;
-                    continue;
-                }
-
-                AUC_test[f] = calculate_auc_pr(T, idx_test, fold_size, predicted_tensor);
                 printf("[Fold %d] AUC-PR: %.6f\n", f, AUC_test[f]);
-                free_tensor(predicted_tensor);
             }
 
             gettimeofday(&run_end, NULL);
             double total_time = elapsed_seconds(run_start, run_end);
-            double test_mean = mean(AUC_test, FOLDS);
-            double test_std = stddev(AUC_test, FOLDS);
+            double test_mean = mean(AUC_test, active_folds);
+            double test_std = stddev(AUC_test, active_folds);
 
             printf("[Result] AUC-PR mean:%.6f | std:%.6f | time:%.2f s\n",
                    test_mean, test_std, total_time);
@@ -366,7 +546,7 @@ int main(int argc, char* argv[]) {
             printf("[CSV]    Ligne écrite dans %s\n", RESULTS_FILE);
             printf("=== FIN: %s rank:%d ===\n", dataset.name, config.rank);
 
-            free(IDX);
+            free(positives);
             free(AUC_test);
             free_tensor(T);
             if (P) free_tensor(P);
