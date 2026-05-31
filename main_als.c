@@ -19,10 +19,7 @@
 #define NEGATIVES_PER_POSITIVE 1
 #define LARGE_TENSOR_DENSE_ENTRIES_THRESHOLD 100000000LL
 
-typedef struct {
-    const char* name;
-    const char* path;
-} DatasetConfig;
+static bool g_results_include_lambda_z = true;
 
 typedef struct {
     int rank;
@@ -32,6 +29,15 @@ typedef struct {
     double lambda_R;
     double lambda_Z;
 } ALSConfig;
+
+typedef struct {
+    const char* name;
+    const char* path;
+    const ALSConfig* configs;
+    int num_configs;
+} DatasetConfig;
+
+#define ARRAY_LEN(array) ((int)(sizeof(array) / sizeof((array)[0])))
 
 typedef struct {
     char** keys;
@@ -261,9 +267,11 @@ static void processed_set_add(ProcessedSet* set, const char* key) {
 }
 
 static void make_run_key(char* buffer, size_t size, const char* dataset,
-                         int rank, double lambda_A, double lambda_R, int threads) {
-    snprintf(buffer, size, "%s;%d;%.6f;%.6f;%d",
-             dataset, rank, lambda_A, lambda_R, threads);
+                         int rank, int maxIter, double conv,
+                         double lambda_A, double lambda_R, double lambda_Z,
+                         int threads) {
+    snprintf(buffer, size, "%s;%d;%d;%.6f;%.6f;%.6f;%.6f;%d",
+             dataset, rank, maxIter, conv, lambda_A, lambda_R, lambda_Z, threads);
 }
 
 static void load_processed_runs(const char* filename, ProcessedSet* set) {
@@ -281,14 +289,17 @@ static void load_processed_runs(const char* filename, ProcessedSet* set) {
     while (fgets(line, sizeof(line), file)) {
         char dataset[256];
         int rank = 0;
+        int maxIter = 0;
+        double conv = 0.0;
         double lambda_A = 0.0;
         double lambda_R = 0.0;
+        double lambda_Z = 5.0;
         int threads = 1;
 
-        char* fields[12] = {0};
+        char* fields[13] = {0};
         int field_count = 0;
         char* token = strtok(line, ";\n\r");
-        while (token && field_count < 12) {
+        while (token && field_count < 13) {
             fields[field_count++] = token;
             token = strtok(NULL, ";\n\r");
         }
@@ -296,17 +307,23 @@ static void load_processed_runs(const char* filename, ProcessedSet* set) {
         if (field_count >= 6) {
             snprintf(dataset, sizeof(dataset), "%s", fields[0]);
             rank = atoi(fields[1]);
+            maxIter = atoi(fields[2]);
+            conv = strtod(fields[3], NULL);
             lambda_A = strtod(fields[4], NULL);
             lambda_R = strtod(fields[5], NULL);
-            if (field_count >= 12) {
+            if (field_count >= 13) {
+                lambda_Z = strtod(fields[6], NULL);
+                threads = atoi(fields[12]);
+            } else if (field_count >= 12) {
                 threads = atoi(fields[11]);
-                if (threads < 1) {
-                    threads = 1;
-                }
+            }
+            if (threads < 1) {
+                threads = 1;
             }
 
             char key[512];
-            make_run_key(key, sizeof(key), dataset, rank, lambda_A, lambda_R, threads);
+            make_run_key(key, sizeof(key), dataset, rank, maxIter, conv,
+                         lambda_A, lambda_R, lambda_Z, threads);
             processed_set_add(set, key);
         }
     }
@@ -316,6 +333,19 @@ static void load_processed_runs(const char* filename, ProcessedSet* set) {
 
 static FILE* open_results_file(const char* filename) {
     bool exists = (access(filename, F_OK) == 0);
+    g_results_include_lambda_z = true;
+
+    if (exists) {
+        FILE* existing_file = fopen(filename, "r");
+        if (existing_file) {
+            char header[2048];
+            if (fgets(header, sizeof(header), existing_file)) {
+                g_results_include_lambda_z = (strstr(header, "lambda_Z") != NULL);
+            }
+            fclose(existing_file);
+        }
+    }
+
     FILE* file = fopen(filename, "a");
     if (!file) {
         fprintf(stderr, "Erreur : impossible d'ouvrir %s (%s)\n", filename, strerror(errno));
@@ -323,7 +353,7 @@ static FILE* open_results_file(const char* filename) {
     }
 
     if (!exists) {
-        fprintf(file, "dataset;rank;maxIter;conv;lambda_A;lambda_R;nnz;"
+        fprintf(file, "dataset;rank;maxIter;conv;lambda_A;lambda_R;lambda_Z;nnz;"
                       "import_time_s;auc_pr_mean;auc_pr_std;total_time_s;threads\n");
         fflush(file);
     }
@@ -402,21 +432,32 @@ int main(int argc, char* argv[]) {
         printf("[Reprise] Mode force active : les combinaisons deja presentes seront recalculees\n");
     }
 
-    DatasetConfig datasets[] = {
-       // { "kinships", "./kinships" },
-       // { "umls",     "./umls"     },
-        //{ "nations",  "./nations"  },
-         { "fb15k237", "./fb15k237_csr" },
+    ALSConfig dbpedia50_configs[] = {
+        { 100, 20, 1e-5, 1.0, 1.0, 5.0 },
+        { 150, 20, 1e-5, 0.5, 0.5, 5.0 },
+        // { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
     };
-    int num_datasets = (int)(sizeof(datasets) / sizeof(datasets[0]));
 
-    ALSConfig configs[] = {
-       // { 50,  100, 1e-4, 5.0,  5.0,  5.0 },
-       // { 90,  100, 1e-4, 5.0,  5.0,  5.0 },
-        { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
-        /* Ajouter d'autres configurations ici. */
+    ALSConfig codex_small_configs[] = {
+        { 100, 30, 1e-5, 0.5, 0.5, 5.0 },
+       // { 150, 30, 1e-5, 0.1, 0.1, 5.0 },
     };
-    int num_configs = (int)(sizeof(configs) / sizeof(configs[0]));
+
+    ALSConfig codex_medium_configs[] = {
+        { 150, 20, 1e-5, 0.2, 0.2, 5.0 },
+      //  { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
+    };
+
+    DatasetConfig datasets[] = {
+        // { "kinships", "./kinships", kinships_configs, ARRAY_LEN(kinships_configs) },
+        // { "umls", "./umls", umls_configs, ARRAY_LEN(umls_configs) },
+        // { "nations", "./nations", nations_configs, ARRAY_LEN(nations_configs) },
+        // { "fb15k237", "./fb15k237_csr", fb15k237_configs, ARRAY_LEN(fb15k237_configs) },
+      //  { "DBpedia50", "./DBpedia50_csr", dbpedia50_configs, ARRAY_LEN(dbpedia50_configs) },
+       // { "codex_small", "./codex_small_csr", codex_small_configs, ARRAY_LEN(codex_small_configs) },
+        { "codex_medium", "./codex_medium_csr", codex_medium_configs, ARRAY_LEN(codex_medium_configs) },
+    };
+    int num_datasets = ARRAY_LEN(datasets);
 
     ProcessedSet processed;
     processed_set_init(&processed);
@@ -428,17 +469,32 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    int total_combinations = num_datasets * num_configs;
+    /*
+    -mkdir ~/.screen && chmod 700 ~/.screen
+
+-export SCREENDIR=/home/tchuente/.screen
+
+Commande activation de l'environnement de base
+
+-source ~/.bashrc
+
+    */
+
+    int total_combinations = 0;
+    for (int d = 0; d < num_datasets; d++) {
+        total_combinations += datasets[d].num_configs;
+    }
     int executed = 0;
     int attr = 0;
 
     for (int d = 0; d < num_datasets; d++) {
-        for (int c = 0; c < num_configs; c++) {
-            DatasetConfig dataset = datasets[d];
-            ALSConfig config = configs[c];
+        DatasetConfig dataset = datasets[d];
+        for (int c = 0; c < dataset.num_configs; c++) {
+            ALSConfig config = dataset.configs[c];
             char run_key[512];
             make_run_key(run_key, sizeof(run_key), dataset.name, config.rank,
-                         config.lambda_A, config.lambda_R, g_num_threads);
+                         config.maxIter, config.conv, config.lambda_A,
+                         config.lambda_R, config.lambda_Z, g_num_threads);
 
             if (!force_rerun && processed_set_contains(&processed, run_key)) {
                 printf("SKIP: [%s] rank=%d threads=%d -- deja calcule\n",
@@ -534,11 +590,19 @@ int main(int argc, char* argv[]) {
             printf("[Result] AUC-PR mean:%.6f | std:%.6f | time:%.2f s\n",
                    test_mean, test_std, total_time);
 
-            fprintf(results_file,
-                    "%s;%d;%d;%.6f;%.6f;%.6f;%d;%.6f;%.6f;%.6f;%.6f;%d\n",
-                    dataset.name, config.rank, config.maxIter, config.conv,
-                    config.lambda_A, config.lambda_R, nnz, import_time,
-                    test_mean, test_std, total_time, g_num_threads);
+            if (g_results_include_lambda_z) {
+                fprintf(results_file,
+                        "%s;%d;%d;%.6f;%.6f;%.6f;%.6f;%d;%.6f;%.6f;%.6f;%.6f;%d\n",
+                        dataset.name, config.rank, config.maxIter, config.conv,
+                        config.lambda_A, config.lambda_R, config.lambda_Z, nnz, import_time,
+                        test_mean, test_std, total_time, g_num_threads);
+            } else {
+                fprintf(results_file,
+                        "%s;%d;%d;%.6f;%.6f;%.6f;%d;%.6f;%.6f;%.6f;%.6f;%d\n",
+                        dataset.name, config.rank, config.maxIter, config.conv,
+                        config.lambda_A, config.lambda_R, nnz, import_time,
+                        test_mean, test_std, total_time, g_num_threads);
+            }
             fflush(results_file);
             processed_set_add(&processed, run_key);
             executed++;

@@ -1,0 +1,34 @@
+Thread(s) : 36
+Fold      : 06
+Debut     : 2026-05-28 21:41:33
+====================================================
+
+====================================================
+Fold 06
+====================================================
+=== DATASET: fb15k237 | rank:200 | lambda_A:0.1 | lambda_R:0.1 ===
+[Config] maxIter:20 | conv:1.0e-06 | threads:36
+[Data]   n_entities:14541 | n_relations:237 | total_nnz:310116
+[Data]   nnz:310116 | import_time:0.04 s
+[Eval]   positifs:2000 | neg/pos:1 | folds:10 | mode:cross-validation CSR echantillonnee
+INFO : RESCAL : [  0] fit: 0.28650 | delta: 2.9e-01 | secs: 18.39658
+INFO : RESCAL : [  1] fit: 0.39686 | delta: 1.1e-01 | secs: 21.35063
+INFO : RESCAL : [  2] fit: 0.40994 | delta: 1.3e-02 | secs: 18.34339
+INFO : RESCAL : [  3] fit: 0.41481 | delta: 4.9e-03 | secs: 21.65355
+INFO : RESCAL : [  4] fit: 0.41733 | delta: 2.5e-03 | secs: 19.15046
+INFO : RESCAL : [  5] fit: 0.41862 | delta: 1.3e-03 | secs: 19.02351
+INFO : RESCAL : [  6] fit: 0.41938 | delta: 7.6e-04 | secs: 18.49815
+INFO : RESCAL : [  7] fit: 0.41990 | delta: 5.3e-04 | secs: 18.41665
+INFO : RESCAL : [  8] fit: 0.42031 | delta: 4.0e-04 | secs: 21.72120
+INFO : RESCAL : [  9] fit: 0.42061 | delta: 3.0e-04 | secs: 18.51867
+INFO : RESCAL : [ 10] fit: 0.42085 | delta: 2.4e-04 | secs: 21.19289
+INFO : RESCAL : [ 11] fit: 0.42104 | delta: 1.9e-04 | secs: 19.17508
+INFO : RESCAL : [ 12] fit: 0.42120 | delta: 1.6e-04 | secs: 19.09223
+INFO : RESCAL : [ 13] fit: 0.42133 | delta: 1.3e-04 | secs: 18.98613
+INFO : RESCAL : [ 14] fit: 0.42145 | delta: 1.2e-04 | secs: 18.07044
+INFO : RESCAL : [ 15] fit: 0.42155 | delta: 1.0e-04 | secs: 21.39749
+INFO : RESCAL : [ 16] fit: 0.42164 | delta: 9.2e-05 | secs: 18.21237
+INFO : RESCAL : [ 17] fit: 0.42172 | delta: 8.0e-05 | secs: 21.10046
+INFO : RESCAL : [ 18] fit: 0.42180 | delta: 7.4e-05 | secs: 18.31856
+INFO : RESCAL : [ 19] fit: 0.42186 | delta: 6.6e-05 | secs: 21.21069
+[Fold 6] AUC-PR: 0.968364

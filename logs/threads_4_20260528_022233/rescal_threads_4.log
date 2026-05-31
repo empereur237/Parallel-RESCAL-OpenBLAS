@@ -1,0 +1,226 @@
+[Threads] Utilisation de 4 thread(s) sur 64 disponibles
+[Reprise] Mode force active : les combinaisons deja presentes seront recalculees
+=== DATASET: fb15k237 | rank:200 | lambda_A:0.1 | lambda_R:0.1 ===
+[Config] maxIter:20 | conv:1.0e-06 | threads:4
+[Data]   n_entities:14541 | n_relations:237 | total_nnz:310116
+[Data]   nnz:310116 | import_time:0.04 s
+[Eval]   positifs:2000 | neg/pos:1 | folds:10 | mode:cross-validation CSR echantillonnee
+INFO : RESCAL : [  0] fit: 0.29060 | delta: 2.9e-01 | secs: 38.86590
+INFO : RESCAL : [  1] fit: 0.40401 | delta: 1.1e-01 | secs: 34.97743
+INFO : RESCAL : [  2] fit: 0.41738 | delta: 1.3e-02 | secs: 35.64756
+INFO : RESCAL : [  3] fit: 0.42219 | delta: 4.8e-03 | secs: 36.72572
+INFO : RESCAL : [  4] fit: 0.42444 | delta: 2.2e-03 | secs: 40.26823
+INFO : RESCAL : [  5] fit: 0.42567 | delta: 1.2e-03 | secs: 38.36659
+INFO : RESCAL : [  6] fit: 0.42649 | delta: 8.2e-04 | secs: 39.96792
+INFO : RESCAL : [  7] fit: 0.42709 | delta: 6.0e-04 | secs: 39.04522
+INFO : RESCAL : [  8] fit: 0.42755 | delta: 4.6e-04 | secs: 39.92483
+INFO : RESCAL : [  9] fit: 0.42792 | delta: 3.7e-04 | secs: 39.20246
+INFO : RESCAL : [ 10] fit: 0.42821 | delta: 2.9e-04 | secs: 39.89049
+INFO : RESCAL : [ 11] fit: 0.42845 | delta: 2.4e-04 | secs: 39.04184
+INFO : RESCAL : [ 12] fit: 0.42865 | delta: 2.0e-04 | secs: 39.96252
+INFO : RESCAL : [ 13] fit: 0.42883 | delta: 1.7e-04 | secs: 38.96381
+INFO : RESCAL : [ 14] fit: 0.42897 | delta: 1.4e-04 | secs: 39.79950
+INFO : RESCAL : [ 15] fit: 0.42910 | delta: 1.3e-04 | secs: 39.01407
+INFO : RESCAL : [ 16] fit: 0.42920 | delta: 1.1e-04 | secs: 40.00773
+INFO : RESCAL : [ 17] fit: 0.42930 | delta: 9.3e-05 | secs: 38.97496
+INFO : RESCAL : [ 18] fit: 0.42938 | delta: 8.0e-05 | secs: 39.90217
+INFO : RESCAL : [ 19] fit: 0.42945 | delta: 7.2e-05 | secs: 39.09096
+[Fold 0] AUC-PR: 0.980984
+INFO : RESCAL : [  0] fit: 0.28875 | delta: 2.9e-01 | secs: 39.63641
+INFO : RESCAL : [  1] fit: 0.39991 | delta: 1.1e-01 | secs: 36.29272
+INFO : RESCAL : [  2] fit: 0.41257 | delta: 1.3e-02 | secs: 39.90625
+INFO : RESCAL : [  3] fit: 0.41730 | delta: 4.7e-03 | secs: 38.08589
+INFO : RESCAL : [  4] fit: 0.41963 | delta: 2.3e-03 | secs: 39.89346
+INFO : RESCAL : [  5] fit: 0.42097 | delta: 1.3e-03 | secs: 36.42106
+INFO : RESCAL : [  6] fit: 0.42181 | delta: 8.4e-04 | secs: 38.06732
+INFO : RESCAL : [  7] fit: 0.42238 | delta: 5.7e-04 | secs: 38.11779
+INFO : RESCAL : [  8] fit: 0.42281 | delta: 4.2e-04 | secs: 36.84251
+INFO : RESCAL : [  9] fit: 0.42316 | delta: 3.5e-04 | secs: 36.39803
+INFO : RESCAL : [ 10] fit: 0.42347 | delta: 3.1e-04 | secs: 38.10891
+INFO : RESCAL : [ 11] fit: 0.42374 | delta: 2.7e-04 | secs: 38.20301
+INFO : RESCAL : [ 12] fit: 0.42397 | delta: 2.3e-04 | secs: 38.05302
+INFO : RESCAL : [ 13] fit: 0.42417 | delta: 2.0e-04 | secs: 38.27979
+INFO : RESCAL : [ 14] fit: 0.42434 | delta: 1.7e-04 | secs: 38.05774
+INFO : RESCAL : [ 15] fit: 0.42449 | delta: 1.5e-04 | secs: 38.06468
+INFO : RESCAL : [ 16] fit: 0.42462 | delta: 1.3e-04 | secs: 39.80718
+INFO : RESCAL : [ 17] fit: 0.42473 | delta: 1.2e-04 | secs: 36.14614
+INFO : RESCAL : [ 18] fit: 0.42484 | delta: 1.0e-04 | secs: 38.04370
+INFO : RESCAL : [ 19] fit: 0.42492 | delta: 8.6e-05 | secs: 36.37620
+[Fold 1] AUC-PR: 0.973344
+INFO : RESCAL : [  0] fit: 0.28561 | delta: 2.9e-01 | secs: 41.33818
+INFO : RESCAL : [  1] fit: 0.39890 | delta: 1.1e-01 | secs: 34.46151
+INFO : RESCAL : [  2] fit: 0.41141 | delta: 1.3e-02 | secs: 39.72724
+INFO : RESCAL : [  3] fit: 0.41599 | delta: 4.6e-03 | secs: 36.39402
+INFO : RESCAL : [  4] fit: 0.41824 | delta: 2.3e-03 | secs: 39.77244
+INFO : RESCAL : [  5] fit: 0.41958 | delta: 1.3e-03 | secs: 36.40714
+INFO : RESCAL : [  6] fit: 0.42042 | delta: 8.4e-04 | secs: 38.01466
+INFO : RESCAL : [  7] fit: 0.42104 | delta: 6.3e-04 | secs: 36.49630
+INFO : RESCAL : [  8] fit: 0.42151 | delta: 4.7e-04 | secs: 39.78773
+INFO : RESCAL : [  9] fit: 0.42190 | delta: 3.9e-04 | secs: 36.34934
+INFO : RESCAL : [ 10] fit: 0.42221 | delta: 3.1e-04 | secs: 38.05340
+INFO : RESCAL : [ 11] fit: 0.42248 | delta: 2.7e-04 | secs: 36.37839
+INFO : RESCAL : [ 12] fit: 0.42271 | delta: 2.3e-04 | secs: 39.88410
+INFO : RESCAL : [ 13] fit: 0.42292 | delta: 2.0e-04 | secs: 38.14147
+INFO : RESCAL : [ 14] fit: 0.42309 | delta: 1.7e-04 | secs: 38.10845
+INFO : RESCAL : [ 15] fit: 0.42324 | delta: 1.5e-04 | secs: 38.14274
+INFO : RESCAL : [ 16] fit: 0.42338 | delta: 1.3e-04 | secs: 39.93560
+INFO : RESCAL : [ 17] fit: 0.42350 | delta: 1.2e-04 | secs: 36.31318
+INFO : RESCAL : [ 18] fit: 0.42360 | delta: 1.0e-04 | secs: 38.91477
+INFO : RESCAL : [ 19] fit: 0.42369 | delta: 9.3e-05 | secs: 36.33460
+[Fold 2] AUC-PR: 0.977505
+INFO : RESCAL : [  0] fit: 0.28949 | delta: 2.9e-01 | secs: 41.48404
+INFO : RESCAL : [  1] fit: 0.40238 | delta: 1.1e-01 | secs: 34.58897
+INFO : RESCAL : [  2] fit: 0.41534 | delta: 1.3e-02 | secs: 38.01541
+INFO : RESCAL : [  3] fit: 0.42004 | delta: 4.7e-03 | secs: 36.43785
+INFO : RESCAL : [  4] fit: 0.42241 | delta: 2.4e-03 | secs: 38.07252
+INFO : RESCAL : [  5] fit: 0.42382 | delta: 1.4e-03 | secs: 38.15163
+INFO : RESCAL : [  6] fit: 0.42476 | delta: 9.4e-04 | secs: 38.17651
+INFO : RESCAL : [  7] fit: 0.42542 | delta: 6.7e-04 | secs: 38.12050
+INFO : RESCAL : [  8] fit: 0.42596 | delta: 5.4e-04 | secs: 39.95158
+INFO : RESCAL : [  9] fit: 0.42640 | delta: 4.4e-04 | secs: 36.32135
+INFO : RESCAL : [ 10] fit: 0.42672 | delta: 3.2e-04 | secs: 39.98880
+INFO : RESCAL : [ 11] fit: 0.42688 | delta: 1.6e-04 | secs: 36.40696
+INFO : RESCAL : [ 12] fit: 0.42700 | delta: 1.2e-04 | secs: 38.93675
+INFO : RESCAL : [ 13] fit: 0.42712 | delta: 1.2e-04 | secs: 36.49232
+INFO : RESCAL : [ 14] fit: 0.42723 | delta: 1.1e-04 | secs: 38.91151
+INFO : RESCAL : [ 15] fit: 0.42734 | delta: 1.0e-04 | secs: 37.16989
+INFO : RESCAL : [ 16] fit: 0.42743 | delta: 9.4e-05 | secs: 38.22246
+INFO : RESCAL : [ 17] fit: 0.42752 | delta: 8.5e-05 | secs: 38.12596
+INFO : RESCAL : [ 18] fit: 0.42759 | delta: 7.7e-05 | secs: 39.94808
+INFO : RESCAL : [ 19] fit: 0.42766 | delta: 7.0e-05 | secs: 38.80891
+[Fold 3] AUC-PR: 0.974239
+INFO : RESCAL : [  0] fit: 0.28672 | delta: 2.9e-01 | secs: 39.68336
+INFO : RESCAL : [  1] fit: 0.39976 | delta: 1.1e-01 | secs: 36.17011
+INFO : RESCAL : [  2] fit: 0.41306 | delta: 1.3e-02 | secs: 37.93119
+INFO : RESCAL : [  3] fit: 0.41819 | delta: 5.1e-03 | secs: 37.05844
+INFO : RESCAL : [  4] fit: 0.42073 | delta: 2.5e-03 | secs: 37.92374
+INFO : RESCAL : [  5] fit: 0.42217 | delta: 1.4e-03 | secs: 36.34650
+INFO : RESCAL : [  6] fit: 0.42300 | delta: 8.3e-04 | secs: 39.78743
+INFO : RESCAL : [  7] fit: 0.42357 | delta: 5.7e-04 | secs: 36.38147
+INFO : RESCAL : [  8] fit: 0.42403 | delta: 4.5e-04 | secs: 38.10581
+INFO : RESCAL : [  9] fit: 0.42441 | delta: 3.8e-04 | secs: 38.28006
+INFO : RESCAL : [ 10] fit: 0.42472 | delta: 3.1e-04 | secs: 37.88760
+INFO : RESCAL : [ 11] fit: 0.42497 | delta: 2.5e-04 | secs: 38.24026
+INFO : RESCAL : [ 12] fit: 0.42519 | delta: 2.1e-04 | secs: 39.91557
+INFO : RESCAL : [ 13] fit: 0.42537 | delta: 1.8e-04 | secs: 37.15153
+INFO : RESCAL : [ 14] fit: 0.42552 | delta: 1.6e-04 | secs: 38.23420
+INFO : RESCAL : [ 15] fit: 0.42566 | delta: 1.4e-04 | secs: 39.01401
+INFO : RESCAL : [ 16] fit: 0.42578 | delta: 1.2e-04 | secs: 38.03881
+INFO : RESCAL : [ 17] fit: 0.42588 | delta: 1.1e-04 | secs: 36.42238
+INFO : RESCAL : [ 18] fit: 0.42598 | delta: 9.5e-05 | secs: 39.96694
+INFO : RESCAL : [ 19] fit: 0.42606 | delta: 8.4e-05 | secs: 36.45060
+[Fold 4] AUC-PR: 0.972498
+INFO : RESCAL : [  0] fit: 0.29077 | delta: 2.9e-01 | secs: 41.59237
+INFO : RESCAL : [  1] fit: 0.40394 | delta: 1.1e-01 | secs: 36.38281
+INFO : RESCAL : [  2] fit: 0.41662 | delta: 1.3e-02 | secs: 36.88328
+INFO : RESCAL : [  3] fit: 0.42125 | delta: 4.6e-03 | secs: 36.33613
+INFO : RESCAL : [  4] fit: 0.42355 | delta: 2.3e-03 | secs: 39.91338
+INFO : RESCAL : [  5] fit: 0.42496 | delta: 1.4e-03 | secs: 36.45911
+INFO : RESCAL : [  6] fit: 0.42593 | delta: 9.7e-04 | secs: 38.06754
+INFO : RESCAL : [  7] fit: 0.42662 | delta: 6.9e-04 | secs: 36.35278
+INFO : RESCAL : [  8] fit: 0.42708 | delta: 4.6e-04 | secs: 39.94153
+INFO : RESCAL : [  9] fit: 0.42742 | delta: 3.4e-04 | secs: 38.14614
+INFO : RESCAL : [ 10] fit: 0.42768 | delta: 2.6e-04 | secs: 39.93411
+INFO : RESCAL : [ 11] fit: 0.42790 | delta: 2.2e-04 | secs: 38.24102
+INFO : RESCAL : [ 12] fit: 0.42807 | delta: 1.8e-04 | secs: 37.19939
+INFO : RESCAL : [ 13] fit: 0.42823 | delta: 1.6e-04 | secs: 37.13168
+INFO : RESCAL : [ 14] fit: 0.42837 | delta: 1.3e-04 | secs: 37.15220
+INFO : RESCAL : [ 15] fit: 0.42849 | delta: 1.2e-04 | secs: 38.15796
+INFO : RESCAL : [ 16] fit: 0.42859 | delta: 1.1e-04 | secs: 39.04643
+INFO : RESCAL : [ 17] fit: 0.42869 | delta: 9.6e-05 | secs: 36.35238
+INFO : RESCAL : [ 18] fit: 0.42877 | delta: 8.6e-05 | secs: 39.89359
+INFO : RESCAL : [ 19] fit: 0.42885 | delta: 7.9e-05 | secs: 36.40623
+[Fold 5] AUC-PR: 0.984689
+INFO : RESCAL : [  0] fit: 0.29078 | delta: 2.9e-01 | secs: 39.76762
+INFO : RESCAL : [  1] fit: 0.40499 | delta: 1.1e-01 | secs: 36.36882
+INFO : RESCAL : [  2] fit: 0.41798 | delta: 1.3e-02 | secs: 37.94284
+INFO : RESCAL : [  3] fit: 0.42300 | delta: 5.0e-03 | secs: 38.08902
+INFO : RESCAL : [  4] fit: 0.42547 | delta: 2.5e-03 | secs: 40.00808
+INFO : RESCAL : [  5] fit: 0.42681 | delta: 1.3e-03 | secs: 38.25841
+INFO : RESCAL : [  6] fit: 0.42764 | delta: 8.3e-04 | secs: 40.04582
+INFO : RESCAL : [  7] fit: 0.42826 | delta: 6.2e-04 | secs: 38.17508
+INFO : RESCAL : [  8] fit: 0.42874 | delta: 4.8e-04 | secs: 38.19794
+INFO : RESCAL : [  9] fit: 0.42912 | delta: 3.9e-04 | secs: 38.14131
+INFO : RESCAL : [ 10] fit: 0.42942 | delta: 3.0e-04 | secs: 38.09424
+INFO : RESCAL : [ 11] fit: 0.42967 | delta: 2.4e-04 | secs: 38.10405
+INFO : RESCAL : [ 12] fit: 0.42987 | delta: 2.0e-04 | secs: 39.94467
+INFO : RESCAL : [ 13] fit: 0.43003 | delta: 1.7e-04 | secs: 36.39551
+INFO : RESCAL : [ 14] fit: 0.43017 | delta: 1.4e-04 | secs: 39.92344
+INFO : RESCAL : [ 15] fit: 0.43030 | delta: 1.2e-04 | secs: 38.30382
+INFO : RESCAL : [ 16] fit: 0.43040 | delta: 1.1e-04 | secs: 40.10256
+INFO : RESCAL : [ 17] fit: 0.43050 | delta: 9.6e-05 | secs: 38.10805
+INFO : RESCAL : [ 18] fit: 0.43059 | delta: 8.6e-05 | secs: 40.00312
+INFO : RESCAL : [ 19] fit: 0.43066 | delta: 7.9e-05 | secs: 38.18090
+[Fold 6] AUC-PR: 0.980480
+INFO : RESCAL : [  0] fit: 0.29159 | delta: 2.9e-01 | secs: 39.68506
+INFO : RESCAL : [  1] fit: 0.40245 | delta: 1.1e-01 | secs: 36.22790
+INFO : RESCAL : [  2] fit: 0.41509 | delta: 1.3e-02 | secs: 38.15620
+INFO : RESCAL : [  3] fit: 0.42002 | delta: 4.9e-03 | secs: 38.13268
+INFO : RESCAL : [  4] fit: 0.42259 | delta: 2.6e-03 | secs: 39.91050
+INFO : RESCAL : [  5] fit: 0.42405 | delta: 1.5e-03 | secs: 38.25085
+INFO : RESCAL : [  6] fit: 0.42488 | delta: 8.3e-04 | secs: 39.91833
+INFO : RESCAL : [  7] fit: 0.42545 | delta: 5.7e-04 | secs: 38.13967
+INFO : RESCAL : [  8] fit: 0.42592 | delta: 4.7e-04 | secs: 38.04608
+INFO : RESCAL : [  9] fit: 0.42630 | delta: 3.8e-04 | secs: 36.34264
+INFO : RESCAL : [ 10] fit: 0.42660 | delta: 3.0e-04 | secs: 38.18574
+INFO : RESCAL : [ 11] fit: 0.42682 | delta: 2.3e-04 | secs: 38.39064
+INFO : RESCAL : [ 12] fit: 0.42701 | delta: 1.9e-04 | secs: 39.95617
+INFO : RESCAL : [ 13] fit: 0.42717 | delta: 1.6e-04 | secs: 36.32267
+INFO : RESCAL : [ 14] fit: 0.42732 | delta: 1.5e-04 | secs: 38.10181
+INFO : RESCAL : [ 15] fit: 0.42745 | delta: 1.3e-04 | secs: 36.28955
+INFO : RESCAL : [ 16] fit: 0.42758 | delta: 1.2e-04 | secs: 38.04261
+INFO : RESCAL : [ 17] fit: 0.42769 | delta: 1.1e-04 | secs: 38.02595
+INFO : RESCAL : [ 18] fit: 0.42780 | delta: 1.1e-04 | secs: 38.08168
+INFO : RESCAL : [ 19] fit: 0.42790 | delta: 9.8e-05 | secs: 38.21420
+[Fold 7] AUC-PR: 0.984647
+INFO : RESCAL : [  0] fit: 0.29178 | delta: 2.9e-01 | secs: 41.63005
+INFO : RESCAL : [  1] fit: 0.40298 | delta: 1.1e-01 | secs: 34.57226
+INFO : RESCAL : [  2] fit: 0.41539 | delta: 1.2e-02 | secs: 38.21604
+INFO : RESCAL : [  3] fit: 0.42014 | delta: 4.8e-03 | secs: 38.20548
+INFO : RESCAL : [  4] fit: 0.42261 | delta: 2.5e-03 | secs: 38.24389
+INFO : RESCAL : [  5] fit: 0.42401 | delta: 1.4e-03 | secs: 36.34123
+INFO : RESCAL : [  6] fit: 0.42485 | delta: 8.4e-04 | secs: 38.26405
+INFO : RESCAL : [  7] fit: 0.42543 | delta: 5.8e-04 | secs: 38.22868
+INFO : RESCAL : [  8] fit: 0.42587 | delta: 4.4e-04 | secs: 38.10016
+INFO : RESCAL : [  9] fit: 0.42622 | delta: 3.5e-04 | secs: 38.04206
+INFO : RESCAL : [ 10] fit: 0.42650 | delta: 2.8e-04 | secs: 38.01496
+INFO : RESCAL : [ 11] fit: 0.42673 | delta: 2.3e-04 | secs: 38.02839
+INFO : RESCAL : [ 12] fit: 0.42692 | delta: 1.9e-04 | secs: 40.05394
+INFO : RESCAL : [ 13] fit: 0.42707 | delta: 1.5e-04 | secs: 37.94985
+INFO : RESCAL : [ 14] fit: 0.42720 | delta: 1.3e-04 | secs: 39.91184
+INFO : RESCAL : [ 15] fit: 0.42731 | delta: 1.0e-04 | secs: 38.08567
+INFO : RESCAL : [ 16] fit: 0.42739 | delta: 8.8e-05 | secs: 38.02660
+INFO : RESCAL : [ 17] fit: 0.42747 | delta: 7.3e-05 | secs: 38.16353
+INFO : RESCAL : [ 18] fit: 0.42753 | delta: 6.4e-05 | secs: 39.86139
+INFO : RESCAL : [ 19] fit: 0.42759 | delta: 5.5e-05 | secs: 38.13008
+[Fold 8] AUC-PR: 0.979565
+INFO : RESCAL : [  0] fit: 0.29092 | delta: 2.9e-01 | secs: 41.61339
+INFO : RESCAL : [  1] fit: 0.40527 | delta: 1.1e-01 | secs: 36.28346
+INFO : RESCAL : [  2] fit: 0.41853 | delta: 1.3e-02 | secs: 38.10399
+INFO : RESCAL : [  3] fit: 0.42331 | delta: 4.8e-03 | secs: 36.42676
+INFO : RESCAL : [  4] fit: 0.42545 | delta: 2.1e-03 | secs: 38.16264
+INFO : RESCAL : [  5] fit: 0.42663 | delta: 1.2e-03 | secs: 36.28138
+INFO : RESCAL : [  6] fit: 0.42733 | delta: 7.0e-04 | secs: 38.10384
+INFO : RESCAL : [  7] fit: 0.42783 | delta: 5.0e-04 | secs: 38.21112
+INFO : RESCAL : [  8] fit: 0.42820 | delta: 3.8e-04 | secs: 40.09760
+INFO : RESCAL : [  9] fit: 0.42854 | delta: 3.3e-04 | secs: 38.20452
+INFO : RESCAL : [ 10] fit: 0.42883 | delta: 2.9e-04 | secs: 38.16524
+INFO : RESCAL : [ 11] fit: 0.42910 | delta: 2.7e-04 | secs: 38.19365
+INFO : RESCAL : [ 12] fit: 0.42934 | delta: 2.4e-04 | secs: 38.17938
+INFO : RESCAL : [ 13] fit: 0.42955 | delta: 2.1e-04 | secs: 36.38929
+INFO : RESCAL : [ 14] fit: 0.42974 | delta: 1.9e-04 | secs: 39.62332
+INFO : RESCAL : [ 15] fit: 0.42991 | delta: 1.6e-04 | secs: 39.61350
+INFO : RESCAL : [ 16] fit: 0.43005 | delta: 1.4e-04 | secs: 39.88776
+INFO : RESCAL : [ 17] fit: 0.43017 | delta: 1.2e-04 | secs: 36.34394
+INFO : RESCAL : [ 18] fit: 0.43028 | delta: 1.1e-04 | secs: 39.95171
+INFO : RESCAL : [ 19] fit: 0.43038 | delta: 9.4e-05 | secs: 38.01386
+[Fold 9] AUC-PR: 0.982995
+[Result] AUC-PR mean:0.979095 | std:0.004310 | time:7752.48 s
+[CSV]    Ligne écrite dans rescal_results.csv
+=== FIN: fb15k237 rank:200 ===
+====================================================
+RÉSUMÉ FINAL
+====================================================
+Combinaisons exécutées : 1 / 1
+Résultats sauvegardés  : rescal_results.csv
+====================================================
