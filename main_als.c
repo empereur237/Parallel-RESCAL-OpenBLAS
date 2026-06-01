@@ -370,11 +370,16 @@ static bool is_force_value(const char* value) {
             strcmp(value, "YES") == 0);
 }
 
+static void print_usage(const char* program_name) {
+    fprintf(stderr, "Usage : %s [num_threads] [--dataset NOM] [--force-rerun]\n",
+            program_name);
+}
+
 int main(int argc, char* argv[]) {
     srand((unsigned int)time(NULL));
 
     /* Nombre de threads : argument optionnel */
-    /* Usage : ./rescal [num_threads] [--force-rerun] */
+    /* Usage : ./rescal [num_threads] [--dataset NOM] [--force-rerun] */
     /* Defaut : 1 thread (sequentiel)          */
     int max_threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
     if (max_threads < 1) {
@@ -382,6 +387,10 @@ int main(int argc, char* argv[]) {
     }
 
     bool force_rerun = is_force_value(getenv("RESCAL_FORCE_RERUN"));
+    const char* dataset_filter = getenv("RESCAL_DATASET");
+    if (dataset_filter && dataset_filter[0] == '\0') {
+        dataset_filter = NULL;
+    }
     bool threads_set = false;
 
     for (int i = 1; i < argc; i++) {
@@ -391,15 +400,35 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        if (strcmp(argv[i], "--dataset") == 0) {
+            if (i + 1 >= argc || argv[i + 1][0] == '\0') {
+                fprintf(stderr, "ERREUR : --dataset attend un nom de dataset\n");
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            dataset_filter = argv[++i];
+            continue;
+        }
+
+        if (strncmp(argv[i], "--dataset=", 10) == 0) {
+            dataset_filter = argv[i] + 10;
+            if (dataset_filter[0] == '\0') {
+                fprintf(stderr, "ERREUR : --dataset attend un nom de dataset\n");
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+
         if (argv[i][0] == '-') {
             fprintf(stderr, "ERREUR : option inconnue : %s\n", argv[i]);
-            fprintf(stderr, "Usage : %s [num_threads] [--force-rerun]\n", argv[0]);
+            print_usage(argv[0]);
             return EXIT_FAILURE;
         }
 
         if (threads_set) {
             fprintf(stderr, "ERREUR : nombre de threads donne plusieurs fois\n");
-            fprintf(stderr, "Usage : %s [num_threads] [--force-rerun]\n", argv[0]);
+            print_usage(argv[0]);
             return EXIT_FAILURE;
         }
 
@@ -431,9 +460,12 @@ int main(int argc, char* argv[]) {
     if (force_rerun) {
         printf("[Reprise] Mode force active : les combinaisons deja presentes seront recalculees\n");
     }
+    if (dataset_filter) {
+        printf("[Dataset] Filtre active : %s\n", dataset_filter);
+    }
 
     ALSConfig dbpedia50_configs[] = {
-        { 100, 20, 1e-5, 1.0, 1.0, 5.0 },
+        //{ 100, 20, 1e-5, 1.0, 1.0, 5.0 },
         { 150, 20, 1e-5, 0.5, 0.5, 5.0 },
         // { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
     };
@@ -443,19 +475,33 @@ int main(int argc, char* argv[]) {
        // { 150, 30, 1e-5, 0.1, 0.1, 5.0 },
     };
 
+     ALSConfig nations_configs[] = {
+        { 90, 100, 1e-4, 5, 5, 5.0 },
+       // { 150, 30, 1e-5, 0.1, 0.1, 5.0 },
+    };
+
+     ALSConfig umls_configs[] = {
+        { 90, 100, 1e-4, 5, 5, 5.0 },
+    };
+
+     ALSConfig kinships_configs[] = {
+        { 90, 100, 1e-4, 5, 5, 5.0 },
+       // { 150, 30, 1e-5, 0.1, 0.1, 5.0 },
+    };
+
     ALSConfig codex_medium_configs[] = {
         { 150, 20, 1e-5, 0.2, 0.2, 5.0 },
       //  { 200, 20, 1e-6, 0.1, 0.1, 5.0 },
     };
 
     DatasetConfig datasets[] = {
-        // { "kinships", "./kinships", kinships_configs, ARRAY_LEN(kinships_configs) },
-        // { "umls", "./umls", umls_configs, ARRAY_LEN(umls_configs) },
-        // { "nations", "./nations", nations_configs, ARRAY_LEN(nations_configs) },
+         { "kinships", "./kinships", kinships_configs, ARRAY_LEN(kinships_configs) },
+         { "umls", "./umls", umls_configs, ARRAY_LEN(umls_configs) },
+         { "nations", "./nations", nations_configs, ARRAY_LEN(nations_configs) },
         // { "fb15k237", "./fb15k237_csr", fb15k237_configs, ARRAY_LEN(fb15k237_configs) },
-      //  { "DBpedia50", "./DBpedia50_csr", dbpedia50_configs, ARRAY_LEN(dbpedia50_configs) },
-       // { "codex_small", "./codex_small_csr", codex_small_configs, ARRAY_LEN(codex_small_configs) },
+        { "codex_small", "./codex_small_csr", codex_small_configs, ARRAY_LEN(codex_small_configs) },
         { "codex_medium", "./codex_medium_csr", codex_medium_configs, ARRAY_LEN(codex_medium_configs) },
+          { "DBpedia50", "./DBpedia50_csr", dbpedia50_configs, ARRAY_LEN(dbpedia50_configs) },
     };
     int num_datasets = ARRAY_LEN(datasets);
 
@@ -480,15 +526,37 @@ Commande activation de l'environnement de base
 
     */
 
+    int selected_datasets = 0;
     int total_combinations = 0;
     for (int d = 0; d < num_datasets; d++) {
+        if (dataset_filter && strcmp(datasets[d].name, dataset_filter) != 0) {
+            continue;
+        }
+        selected_datasets++;
         total_combinations += datasets[d].num_configs;
     }
+
+    if (selected_datasets == 0) {
+        fprintf(stderr, "ERREUR : dataset inconnu : %s\n", dataset_filter);
+        fprintf(stderr, "Datasets disponibles :");
+        for (int d = 0; d < num_datasets; d++) {
+            fprintf(stderr, " %s", datasets[d].name);
+        }
+        fprintf(stderr, "\n");
+        fclose(results_file);
+        processed_set_free(&processed);
+        return EXIT_FAILURE;
+    }
+
     int executed = 0;
     int attr = 0;
 
     for (int d = 0; d < num_datasets; d++) {
         DatasetConfig dataset = datasets[d];
+        if (dataset_filter && strcmp(dataset.name, dataset_filter) != 0) {
+            continue;
+        }
+
         for (int c = 0; c < dataset.num_configs; c++) {
             ALSConfig config = dataset.configs[c];
             char run_key[512];
