@@ -4,6 +4,11 @@
 
 #define _DEFAULT_SOURCE
 
+/*
+ * Fonctions heritees du chargeur dense.
+ * Elles ne sont plus appelees par load_tensor_from_directory(), mais restent
+ * conservees pour reference avec l'ancienne implementation commentee.
+ */
 FileList* init_FileList(int initial_capacity) {
     if (initial_capacity <= 0) {
         initial_capacity = 10;
@@ -103,6 +108,106 @@ Matrix* read_matrix_from_file(const char* filename) {
     fclose(file);
     return matrix;
 }
+
+/*
+ * Fonction inutilisee par le nouveau chemin CSR.
+ * Elle reste disponible pour d'anciens jeux de donnees denses, mais
+ * load_tensor_from_directory() ne l'appelle plus.
+ */
+
+#if 0
+/*
+ * Ancienne implementation de load_tensor_from_directory(), conservee pour
+ * reference experimentale.
+ *
+ * Approche : lecture de tous les fichiers .txt comme matrices denses,
+ * allocation d'un Tensor3D dense complet, puis conversion ulterieure vers CSR
+ * par tensor_to_csr(). Cette strategie est incompatible avec FB15k-237 :
+ * n_relations * n_entities * n_entities doubles depassent plusieurs centaines
+ * de Go.
+ */
+Tensor3D* load_tensor_from_directory(const char* directory_path) {
+    DIR* dir = opendir(directory_path);
+    if (dir == NULL) {
+        fprintf(stderr, "Erreur : impossible d'ouvrir le repertoire %s\n", directory_path);
+        return NULL;
+    }
+
+    FileList* file_list = init_FileList(10);
+    if (!file_list) {
+        closedir(dir);
+        return NULL;
+    }
+
+    struct dirent* entry;
+    char filepath[MAX_FILENAME];
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strstr(entry->d_name, ".txt")) {
+            snprintf(filepath, sizeof(filepath), "%s/%s", directory_path, entry->d_name);
+            add_filename(file_list, filepath);
+        }
+    }
+    closedir(dir);
+
+    if (file_list->count == 0) {
+        fprintf(stderr, "Erreur : aucun fichier .txt trouve dans le repertoire %s\n", directory_path);
+        free_FileList(file_list);
+        return NULL;
+    }
+
+    qsort(file_list->filenames, file_list->count, sizeof(char*), compare_filenames);
+
+    Matrix* first_matrix = read_matrix_from_file(file_list->filenames[0]);
+    if (first_matrix == NULL) {
+        free_FileList(file_list);
+        return NULL;
+    }
+
+    Tensor3D* tensor = init_tensor3D(file_list->count, first_matrix->rows, first_matrix->cols);
+    if (tensor == NULL) {
+        fprintf(stderr, "Erreur : echec de l'allocation memoire pour le tenseur\n");
+        free_Matrix(first_matrix);
+        free_FileList(file_list);
+        return NULL;
+    }
+
+    for (int i = 0; i < first_matrix->rows; i++) {
+        for (int j = 0; j < first_matrix->cols; j++) {
+            tensor->slices[0].data[i][j] = first_matrix->data[i][j];
+        }
+    }
+    free_Matrix(first_matrix);
+
+    for (int k = 1; k < file_list->count; k++) {
+        Matrix* temp_matrix = read_matrix_from_file(file_list->filenames[k]);
+        if (temp_matrix == NULL) {
+            fprintf(stderr, "Erreur : impossible de lire la matrice dans le fichier %s\n", file_list->filenames[k]);
+            free_tensor(tensor);
+            free_FileList(file_list);
+            return NULL;
+        }
+
+        if (temp_matrix->rows != tensor->rows || temp_matrix->cols != tensor->cols) {
+            fprintf(stderr, "Erreur : dimensions incompatibles dans %s\n", file_list->filenames[k]);
+            free_Matrix(temp_matrix);
+            free_tensor(tensor);
+            free_FileList(file_list);
+            return NULL;
+        }
+
+        for (int i = 0; i < temp_matrix->rows; i++) {
+            for (int j = 0; j < temp_matrix->cols; j++) {
+                tensor->slices[k].data[i][j] = temp_matrix->data[i][j];
+            }
+        }
+        free_Matrix(temp_matrix);
+    }
+
+    free_FileList(file_list);
+    return tensor;
+}
+#endif
 
 static int parse_tensor_meta(const char* meta_path, int* n_entities, int* n_relations) {
     FILE* f = fopen(meta_path, "r");
@@ -410,6 +515,10 @@ Tensor3D* innerfold(Tensor3D* T, Tensor3D* P, int* mask_idx, int mask_length,
                     int rank, int maxIter, double conv,
                     double lambda_A, double lambda_R, double lambda_Z) {
     Tensor3D* T_train = copy_Tensor3D(T);
+    if (!T_train) {
+        return NULL;
+    }
+
     for (int i = 0; i < mask_length; i++) {
         int a, b, c;
         unravel_index(mask_idx[i], T->rows, T->num_slices, &a, &b, &c);
@@ -564,7 +673,7 @@ double calculate_auc_pr(Tensor3D* T, int* target_idx, int target_length, Tensor3
         int a, b, c;
         unravel_index(target_idx[i], T->rows, T->num_slices, &a, &b, &c);
         y_true[i] = tensor_get_value(T, c, a, b);
-        y_pred[i] = predicted_tensor->slices[c].data[a][b];
+        y_pred[i] = tensor_get_value(predicted_tensor, c, a, b);
     }
 
     double auc_pr = compute_auc_pr(y_true, y_pred, target_length);

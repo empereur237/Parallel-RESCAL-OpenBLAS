@@ -353,7 +353,7 @@ resultat rescal_als(Tensor3D* X1, int rank, char* init, int maxIter, double conv
     array_init(&exectimes, (size_t)maxIter);
 
     for (int itr = 0; itr < maxIter; ++itr) {
-        clock_t iter_start = clock();
+        double iter_start = omp_get_wtime();
         fitold = fit;
 
         Matrix* new_A = _updateA(X, A, R, P, Z, lambda_A, rank);
@@ -374,7 +374,7 @@ resultat rescal_als(Tensor3D* X1, int rank, char* init, int maxIter, double conv
         fit = _compute_fit(X, X1, A, R, lambda_A, lambda_R);
         fitchange = fabs(fitold - fit);
 
-        double iter_time = (double)(clock() - iter_start) / CLOCKS_PER_SEC;
+        double iter_time = omp_get_wtime() - iter_start;
         array_append(&exectimes, iter_time);
         log_info(itr, fit, fitchange, iter_time);
 

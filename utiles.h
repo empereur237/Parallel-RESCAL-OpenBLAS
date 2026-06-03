@@ -13,6 +13,8 @@
 
 #include <cblas.h>
 
+void openblas_set_num_threads(int num_threads);
+
 #ifndef RESCAL_BLAS_DEBUG
 #define RESCAL_BLAS_DEBUG 0
 #endif
